@@ -80,3 +80,4 @@ frontend/tests/__pycache__/
 /docs/build/
 
 /docs
+.agents

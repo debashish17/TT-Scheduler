@@ -3,6 +3,7 @@ Main FastAPI application entry point.
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 
 from app.core.config import settings
 from app.api.v1 import (
@@ -19,6 +20,13 @@ from app.api.v1 import (
     analytics,
     issues,
     simple_timetable,
+)
+
+# Configure logging so all modules (especially simple_solver) print to console
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
 )
 
 # Create FastAPI application instance

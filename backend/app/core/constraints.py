@@ -129,7 +129,7 @@ class TimetableConstraintConfig:
 
     # Soft constraint settings
     enable_soft_constraints: bool = True
-    soft_constraint_weights: Dict[str, int] = None
+    soft_constraint_weights: Optional[Dict[str, int]] = None
     max_penalty_score: Optional[int] = None
 
     # Optimization settings
@@ -207,7 +207,7 @@ class ConstraintValidator:
             return 0
 
         total_penalty = 0
-        weights = self.config.soft_constraint_weights
+        weights = self.config.soft_constraint_weights or SoftConstraints.get_default_weights()
 
         # Calculate penalties for each soft constraint
         total_penalty += self._penalty_faculty_preferences(timetable_solution) * weights.get(SoftConstraints.FACULTY_PREFERRED_SLOTS, 0)

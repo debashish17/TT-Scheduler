@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaPlay, FaArrowLeft, FaSchool, FaBook, FaClock, FaDoorOpen, FaClipboardList } from 'react-icons/fa';
+import { FaPlay, FaArrowLeft, FaSchool, FaBook, FaClock, FaDoorOpen, FaClipboardList, FaUsers } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 import { simpleTimetableAPI } from '../../api/client';
 
 const SetupSummary = () => {
   const navigate = useNavigate();
   const {
-    institutionData, subjectsData, teachersData, timeData, roomsData, constraintsData,
+    institutionData, classesData, subjectsData, teachersData, timeData, roomsData, constraintsData,
     setGeneratedTimetable, setTimetableError
   } = useOnboardingStore();
 
@@ -23,13 +23,22 @@ const SetupSummary = () => {
       action: '/screen-1'
     },
     {
+      icon: <FaUsers className="text-indigo-500" />,
+      title: 'Batches',
+      ready: classesData?.length > 0,
+      detail: classesData?.length > 0
+        ? `${classesData.length} batches, ${classesData.reduce((s, b) => s + (b.size || 0), 0)} students`
+        : 'No batches added',
+      action: '/screen-2'
+    },
+    {
       icon: <FaBook className="text-green-500" />,
       title: 'Subjects',
       ready: subjectsData?.length > 0,
       detail: subjectsData?.length > 0
         ? `${subjectsData.length} subjects, ${subjectsData.reduce((s, sub) => s + (sub.periods_per_week || 0), 0)} periods/week/class`
         : 'No subjects added',
-      action: '/screen-2'
+      action: '/screen-3'
     },
     {
       icon: <FaClock className="text-purple-500" />,
@@ -38,7 +47,7 @@ const SetupSummary = () => {
       detail: timeData
         ? `${timeData.workingDays?.length} days, ${timeData.periodsPerDay} periods/day`
         : 'Not set',
-      action: '/screen-3'
+      action: '/screen-4'
     },
     {
       icon: <FaDoorOpen className="text-orange-500" />,
@@ -47,7 +56,7 @@ const SetupSummary = () => {
       detail: roomsData?.length > 0
         ? `${roomsData.length} rooms, total capacity: ${roomsData.reduce((s, r) => s + (r.capacity || 0), 0)}`
         : 'No rooms added',
-      action: '/screen-4'
+      action: '/screen-5'
     },
     {
       icon: <FaClipboardList className="text-red-500" />,
@@ -56,7 +65,7 @@ const SetupSummary = () => {
       detail: constraintsData
         ? `Max ${constraintsData.max_consecutive_periods} consecutive periods`
         : 'Using defaults',
-      action: '/screen-5'
+      action: '/screen-6'
     },
   ];
 
@@ -68,6 +77,7 @@ const SetupSummary = () => {
       name: s.name,
       code: s.code,
       periods_per_week: s.periods_per_week || 3,
+      target_classes: s.target_classes || []
     }));
 
     const teachers = (teachersData || []).filter(t => t.name).map(t => ({
@@ -79,8 +89,10 @@ const SetupSummary = () => {
     const finalTeachers = teachers.length > 0 ? teachers :
       subj.map(s => ({ name: `${s.name} Teacher`, subjects: [s.code] }));
 
-    // Build one class per entry (user said "school style" — one class for now)
-    const classes = [{ name: 'Class A', size: 30 }];
+    const classes = (classesData || []).map(c => ({
+      name: c.name,
+      size: parseInt(c.size) || 30
+    }));
 
     const rooms = (roomsData || []).map(r => ({
       name: r.name,
@@ -205,7 +217,7 @@ const SetupSummary = () => {
         </div>
 
         <div className="flex justify-start mt-8 pt-6 border-t border-gray-200">
-          <button onClick={() => navigate('/screen-5')}
+          <button onClick={() => navigate('/screen-6')}
             className="flex items-center space-x-2 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-sm">
             <FaArrowLeft size={12} />
             <span>Back to Rules</span>

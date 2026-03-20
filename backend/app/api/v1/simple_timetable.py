@@ -18,6 +18,7 @@ class SubjectIn(BaseModel):
     name: str
     code: str
     periods_per_week: int = Field(default=3, ge=1, le=15)
+    target_classes: List[str] = []   # empty = applies to all classes
 
 
 class TeacherIn(BaseModel):
@@ -55,6 +56,7 @@ class SimpleTimetableRequest(BaseModel):
 
 
 @router.post("/generate-simple")
+@router.post("/generate")   # alias so frontend can call /api/v1/timetable/generate
 async def generate_simple_timetable(request: SimpleTimetableRequest):
     """
     Generate a school timetable from self-contained request data.
@@ -115,7 +117,11 @@ async def generate_simple_timetable(request: SimpleTimetableRequest):
         f"{len(request.classes)} classes, {len(request.rooms)} rooms"
     )
 
-    result = solve_timetable(problem)
+    try:
+        result = solve_timetable(problem)
+    except Exception as e:
+        logger.error(f"Timetable generation error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Solver error: {str(e)}")
 
     if not result.get("success"):
         raise HTTPException(

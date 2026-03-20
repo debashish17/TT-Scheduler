@@ -337,6 +337,7 @@ export const useOnboardingStore = create(
     (set) => ({
       institutionData: null,
       workflowData: null,
+      classesData: [],
       subjectsData: [],
       teachersData: [],
       timeData: null,
@@ -348,6 +349,7 @@ export const useOnboardingStore = create(
 
       setInstitutionData: (data) => set({ institutionData: data }),
       setWorkflowData: (data) => set({ workflowData: data }),
+      setClassesData: (data) => set({ classesData: data }),
       setSubjectsData: (data) => set({ subjectsData: data }),
       setTeachersData: (data) => set({ teachersData: data }),
       setTimeData: (data) => set({ timeData: data }),
@@ -360,6 +362,7 @@ export const useOnboardingStore = create(
       clearOnboardingData: () => set({
         institutionData: null,
         workflowData: null,
+        classesData: [],
         subjectsData: [],
         teachersData: [],
         timeData: null,

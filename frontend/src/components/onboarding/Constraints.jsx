@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { FaArrowRight, FaArrowLeft, FaCheck } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 
-const steps = ['Institution', 'Subjects', 'Schedule', 'Rooms', 'Rules', 'Generate'];
+const steps = ['Institution', 'Batches', 'Subjects', 'Schedule', 'Rooms', 'Rules', 'Generate'];
 
 const ProgressBar = ({ current, total, steps: stepLabels }) => (
   <div className="mb-8">
@@ -26,19 +26,21 @@ const ProgressBar = ({ current, total, steps: stepLabels }) => (
 
 const Constraints = () => {
   const navigate = useNavigate();
-  const { setConstraintsData } = useOnboardingStore();
+  const { constraintsData, setConstraintsData } = useOnboardingStore();
 
-  const [constraints, setConstraints] = useState({
-    max_consecutive_periods: 3,
-    lunch_after_period: 4,
-    max_periods_per_day_per_teacher: 6,
-  });
+  const [constraints, setConstraints] = useState(
+    constraintsData || {
+      max_consecutive_periods: 3,
+      lunch_after_period: 4,
+      max_periods_per_day_per_teacher: 6,
+    }
+  );
 
   const update = (key, val) => setConstraints({ ...constraints, [key]: val });
 
   const handleFinish = () => {
     setConstraintsData(constraints);
-    navigate('/screen-6');
+    navigate('/screen-7');
   };
 
   const HARD_CONSTRAINTS = [
@@ -51,7 +53,7 @@ const Constraints = () => {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-white rounded-2xl shadow-lg p-8">
-        <ProgressBar current={5} total={6} steps={steps} />
+        <ProgressBar current={6} total={7} steps={steps} />
 
         <h2 className="text-2xl font-bold text-gray-800 mb-1">Scheduling Rules</h2>
         <p className="text-gray-500 mb-6">These rules guide the timetable generator. Hard constraints are always enforced automatically.</p>
@@ -126,7 +128,7 @@ const Constraints = () => {
         </div>
 
         <div className="flex justify-between mt-8 pt-6 border-t border-gray-200">
-          <button onClick={() => navigate('/screen-4')}
+          <button onClick={() => navigate('/screen-5')}
             className="flex items-center space-x-2 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
             <FaArrowLeft />
             <span>Back</span>

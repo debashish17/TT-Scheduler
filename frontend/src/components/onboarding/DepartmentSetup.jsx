@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { FaArrowRight, FaArrowLeft, FaPlus, FaTrash } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 
-const steps = ['Institution', 'Subjects', 'Schedule', 'Rooms', 'Rules', 'Generate'];
+const steps = ['Institution', 'Batches', 'Subjects', 'Schedule', 'Rooms', 'Rules', 'Generate'];
 
 const ProgressBar = ({ current, total, steps: stepLabels }) => (
   <div className="mb-8">
@@ -53,20 +53,33 @@ const TEMPLATES = {
 
 const DepartmentSetup = () => {
   const navigate = useNavigate();
-  const { setSubjectsData } = useOnboardingStore();
+  const { classesData, subjectsData, setSubjectsData } = useOnboardingStore();
 
-  const [subjects, setSubjects] = useState([
-    { name: 'Mathematics', code: 'MATH', periods_per_week: 5 },
-    { name: 'English', code: 'ENG', periods_per_week: 5 },
-    { name: 'Science', code: 'SCI', periods_per_week: 4 },
-    { name: 'Social Studies', code: 'SS', periods_per_week: 3 },
-  ]);
+  const [subjects, setSubjects] = useState(
+    subjectsData?.length > 0 ? subjectsData : [
+      { name: 'Mathematics', code: 'MATH', periods_per_week: 5, target_classes: [] },
+      { name: 'English', code: 'ENG', periods_per_week: 5, target_classes: [] },
+      { name: 'Science', code: 'SCI', periods_per_week: 4, target_classes: [] },
+      { name: 'Social Studies', code: 'SS', periods_per_week: 3, target_classes: [] },
+    ]
+  );
 
-  const addSubject = () => setSubjects([...subjects, { name: '', code: '', periods_per_week: 3 }]);
+  const addSubject = () => setSubjects([...subjects, { name: '', code: '', periods_per_week: 3, target_classes: [] }]);
   const removeSubject = (i) => setSubjects(subjects.filter((_, idx) => idx !== i));
   const update = (i, field, value) => {
     const updated = [...subjects];
     updated[i][field] = value;
+    setSubjects(updated);
+  };
+  
+  const toggleClass = (i, className) => {
+    const updated = [...subjects];
+    const target = updated[i].target_classes || [];
+    if (target.includes(className)) {
+      updated[i].target_classes = target.filter(c => c !== className);
+    } else {
+      updated[i].target_classes = [...target, className];
+    }
     setSubjects(updated);
   };
 
@@ -74,7 +87,7 @@ const DepartmentSetup = () => {
     const valid = subjects.filter(s => s.name.trim() && s.code.trim());
     if (valid.length === 0) { alert('Add at least one subject'); return; }
     setSubjectsData(valid);
-    navigate('/screen-3');
+    navigate('/screen-4');
   };
 
   const totalPeriods = subjects.reduce((s, sub) => s + (parseInt(sub.periods_per_week) || 0), 0);
@@ -82,7 +95,7 @@ const DepartmentSetup = () => {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-white rounded-2xl shadow-lg p-8">
-        <ProgressBar current={2} total={6} steps={steps} />
+        <ProgressBar current={3} total={7} steps={steps} />
 
         <h2 className="text-2xl font-bold text-gray-800 mb-1">Subjects</h2>
         <p className="text-gray-500 mb-6">Add the subjects taught in your school and how many periods each needs per week.</p>
@@ -101,34 +114,62 @@ const DepartmentSetup = () => {
         {/* Subjects table */}
         <div className="bg-gray-50 rounded-lg p-4">
           <div className="grid grid-cols-12 gap-3 text-xs font-medium text-gray-500 uppercase mb-3">
-            <div className="col-span-5">Subject Name</div>
+            <div className="col-span-4">Subject Name & Targets</div>
             <div className="col-span-3">Code</div>
             <div className="col-span-3">Periods / Week</div>
             <div className="col-span-1"></div>
           </div>
 
           {subjects.map((subj, i) => (
-            <div key={i} className="grid grid-cols-12 gap-3 mb-2">
-              <div className="col-span-5">
-                <input type="text" value={subj.name} onChange={e => update(i, 'name', e.target.value)}
-                  placeholder="Mathematics"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+            <div key={i} className="mb-4 border-b border-gray-100 pb-4">
+              <div className="grid grid-cols-12 gap-3 mb-2">
+                <div className="col-span-4">
+                  <input type="text" value={subj.name} onChange={e => update(i, 'name', e.target.value)}
+                    placeholder="Mathematics"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="col-span-3">
+                  <input type="text" value={subj.code} onChange={e => update(i, 'code', e.target.value.toUpperCase())}
+                    placeholder="MATH"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="col-span-3">
+                  <input type="number" value={subj.periods_per_week} onChange={e => update(i, 'periods_per_week', parseInt(e.target.value) || 1)}
+                    min="1" max="15"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="col-span-1 flex items-center">
+                  <button onClick={() => removeSubject(i)} className="text-red-400 hover:text-red-600">
+                    <FaTrash size={12} />
+                  </button>
+                </div>
               </div>
-              <div className="col-span-3">
-                <input type="text" value={subj.code} onChange={e => update(i, 'code', e.target.value.toUpperCase())}
-                  placeholder="MATH"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="col-span-3">
-                <input type="number" value={subj.periods_per_week} onChange={e => update(i, 'periods_per_week', parseInt(e.target.value) || 1)}
-                  min="1" max="15"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="col-span-1 flex items-center">
-                <button onClick={() => removeSubject(i)} className="text-red-400 hover:text-red-600">
-                  <FaTrash size={12} />
-                </button>
-              </div>
+              
+              {/* Target Classes Selection */}
+              {classesData && classesData.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <span className="text-[10px] uppercase text-gray-400 font-bold self-center">For Batches:</span>
+                  {classesData.map((cls, idx) => {
+                    const isSelected = (subj.target_classes || []).includes(cls.name);
+                    return (
+                      <button 
+                        key={idx}
+                        onClick={() => toggleClass(i, cls.name)}
+                        className={`text-xs px-2 py-1 rounded-md border ${
+                          isSelected 
+                            ? 'bg-blue-100 text-blue-700 border-blue-300' 
+                            : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        {cls.name}
+                      </button>
+                    );
+                  })}
+                  {(subj.target_classes || []).length === 0 && (
+                    <span className="text-xs text-orange-500 italic self-center ml-2">(Applies to all batches if none selected)</span>
+                  )}
+                </div>
+              )}
             </div>
           ))}
 
@@ -143,7 +184,7 @@ const DepartmentSetup = () => {
         </div>
 
         <div className="flex justify-between mt-8 pt-6 border-t border-gray-200">
-          <button onClick={() => navigate('/screen-1')}
+          <button onClick={() => navigate('/screen-2')}
             className="flex items-center space-x-2 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
             <FaArrowLeft />
             <span>Back</span>

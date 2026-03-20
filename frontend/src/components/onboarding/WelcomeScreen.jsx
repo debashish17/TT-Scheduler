@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { FaGraduationCap, FaArrowRight, FaPlus, FaTrash } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 
-const steps = ['Institution', 'Subjects', 'Schedule', 'Rooms', 'Rules', 'Generate'];
+const steps = ['Institution', 'Batches', 'Subjects', 'Schedule', 'Rooms', 'Rules', 'Generate'];
 
 const ProgressBar = ({ current, total, steps: stepLabels }) => (
   <div className="mb-8">
@@ -82,7 +82,7 @@ const WelcomeScreen = () => {
           <p className="text-gray-500 mt-1">Set up your institution in a few easy steps</p>
         </div>
 
-        <ProgressBar current={1} total={6} steps={steps} />
+        <ProgressBar current={1} total={7} steps={steps} />
 
         <div className="space-y-6">
           {/* Institution Info */}
