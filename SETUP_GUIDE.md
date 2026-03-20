@@ -1,38 +1,43 @@
-# Timetable Scheduler Backend - Quick Setup Guide
+# Timetable Scheduler - Quick Setup Guide
 
-## Phase 2 Complete ✅
+## Step 1: Backend Setup
 
-You now have a fully functional backend structure with:
-- ✅ Complete database schema (18 tables)
-- ✅ All 18 SQLAlchemy ORM models
-- ✅ Basic CRUD API endpoints (no auth required for now)
-- ✅ Alembic migration setup
-- ✅ Docker configuration
+1. Navigate to the backend directory:
 
-## Quick Start (3 Steps)
+   ```bash
+   cd backend
+   ```
+2. Create a Python virtual environment inside backend:
 
-### Step 1: Setup Environment
+   ```bash
+   python -m venv venv
+   ```
+3. Activate the virtual environment:
 
-```bash
-# Copy environment template
-cp .env.example .env
+   ```bash
+   .\venv\Scripts\activate
+   ```
+4. Install backend dependencies:
 
-# Edit .env and add your Supabase credentials:
-# - SUPABASE_URL
-# - SUPABASE_KEY
-# - SUPABASE_SERVICE_KEY
-# - DATABASE_URL (from Supabase)
-# - SECRET_KEY (generate with: openssl rand -hex 32)
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
+5. Run the backend server:
 
-### Step 2: Create Database Schema
+   ```bash
+   uvicorn app.main:app --reload --port 8000
+   ```
+
+## Step 2: Database Setup
 
 **Option A: Run SQL directly in Supabase**
+
 1. Go to your Supabase project → SQL Editor
 2. Copy the contents of `alembic/versions/001_initial_schema.sql`
 3. Run the SQL script
 
 **Option B: Use Alembic (after database exists)**
+
 ```bash
 # Initialize alembic (first time only)
 alembic revision --autogenerate -m "Initial schema"
@@ -41,9 +46,25 @@ alembic revision --autogenerate -m "Initial schema"
 alembic upgrade head
 ```
 
+## Step 3: Frontend Setup
+
+1. Navigate to the frontend directory:
+   ```bash
+   cd frontend
+   ```
+2. Install frontend dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the frontend development server:
+   ```bash
+   npm run dev
+   ```
+
 ### Step 3: Run the Application
 
 **Option A: Local Development**
+
 ```bash
 # Install dependencies
 pip install -r requirements.txt
@@ -53,6 +74,7 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 **Option B: Docker**
+
 ```bash
 # Build and run
 docker-compose up --build
@@ -70,36 +92,44 @@ docker-compose up -d
 ## Available API Endpoints (No Auth Required)
 
 ### Institutions
+
 - `GET /api/v1/institutions` - List all institutions
 - `POST /api/v1/institutions` - Create institution
 - `GET /api/v1/institutions/{id}` - Get specific institution
 - `DELETE /api/v1/institutions/{id}` - Delete institution
 
 ### Departments
+
 - `GET /api/v1/departments?institution_id={id}` - List departments
 - `POST /api/v1/departments` - Create department
 
 ### Faculty
+
 - `GET /api/v1/faculty?department_id={id}` - List faculty
 - `POST /api/v1/faculty` - Create faculty member
 
 ### Courses
+
 - `GET /api/v1/courses?department_id={id}` - List courses
 - `POST /api/v1/courses` - Create course
 
 ### Student Batches
+
 - `GET /api/v1/batches?department_id={id}` - List batches
 - `POST /api/v1/batches` - Create batch
 
 ### Classrooms
+
 - `GET /api/v1/rooms?institution_id={id}` - List rooms
 - `POST /api/v1/rooms` - Create room
 
 ### Time Slots
+
 - `GET /api/v1/slots?institution_id={id}` - List slots
 - `POST /api/v1/slots` - Create slot
 
 ### Timetables
+
 - `GET /api/v1/timetables?institution_id={id}` - List timetables
 - `GET /api/v1/timetables/{id}` - Get timetable with entries
 - `POST /api/v1/timetables` - Create timetable
@@ -133,6 +163,7 @@ curl "http://localhost:8000/api/v1/institutions"
 The system has 18 interconnected tables:
 
 **Core Tables:**
+
 1. institutions - Educational institutions
 2. departments - Academic departments
 3. users - System users (to be enabled with auth)
@@ -165,40 +196,3 @@ The system has 18 interconnected tables:
 16. notifications - User notifications
 17. audit_logs - Activity audit trail
 18. issue_reports - Problem reports
-
-## Next Steps (Phase 3+)
-
-1. **Authentication** - Add JWT authentication (Phase 3)
-2. **Pydantic Schemas** - Create request/response schemas
-3. **CRUD Services** - Implement business logic layer
-4. **Excel Import** - Add bulk data import
-5. **CP-SAT Solver** - Implement timetable generation
-6. **Celery Tasks** - Add background job processing
-7. **Testing** - Add comprehensive test suite
-
-## Troubleshooting
-
-### Database Connection Error
-- Verify your `DATABASE_URL` in `.env`
-- Ensure Supabase project is active
-- Check if database schema has been created
-
-### Import Errors
-- Ensure all dependencies are installed: `pip install -r requirements.txt`
-- Check Python version: `python --version` (should be 3.11+)
-
-### Port Already in Use
-- Change port: `uvicorn app.main:app --port 8001`
-- Or kill the process using port 8000
-
-## Support
-
-For issues or questions:
-- Check the main README.md
-- Review API documentation at `/api/v1/docs`
-- Open an issue on GitHub
-
----
-
-**Status**: ✅ Phase 2 Complete - Basic CRUD APIs Ready
-**Next**: Phase 3 - Authentication & Security
