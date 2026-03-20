@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend
+  backend:
+    build: .
+    container_name: timetable-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+    volumes:
+      - ./app:/app/app
+    networks:
+      - timetable-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Redis for Celery
+  redis:
+    image: redis:7-alpine
+    container_name: timetable-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - timetable-network
+    volumes:
+      - redis-data:/data
+
+  # Celery Worker
+  celery_worker:
+    build: .
+    container_name: timetable-celery-worker
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - backend
+    networks:
+      - timetable-network
+    command: celery -A app.core.celery_app worker --loglevel=info
+
+  # Flower (Celery monitoring tool) - optional
+  flower:
+    build: .
+    container_name: timetable-flower
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - celery_worker
+    networks:
+      - timetable-network
+    command: celery -A app.core.celery_app flower --port=5555
+
+networks:
+  timetable-network:
+    driver: bridge
+
+volumes:
+  redis-data:
