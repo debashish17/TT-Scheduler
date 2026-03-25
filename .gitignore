@@ -13,7 +13,9 @@ backend/build/
 
 # Python (backend)
 backend/venv/
+backend/.venv/
 venv/
+.venv/
 __pycache__/
 *.pyc
 *.pyo
