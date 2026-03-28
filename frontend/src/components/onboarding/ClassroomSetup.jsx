@@ -28,15 +28,19 @@ const ClassroomSetup = () => {
   const navigate = useNavigate();
   const { roomsData, setRoomsData } = useOnboardingStore();
 
-  const [rooms, setRooms] = useState(roomsData?.length > 0 ? roomsData : []);
+  // Always parse capacity to int (Zustand persist can store them as strings)
+  const [rooms, setRooms] = useState(
+    (roomsData?.length > 0 ? roomsData : []).map(r => ({ ...r, capacity: parseInt(r.capacity) || 0 }))
+  );
   const [newRoom, setNewRoom] = useState({ name: '', capacity: '', type: 'Classroom' });
 
   const ROOM_TYPES = ['Classroom', 'Computer Lab', 'Science Lab', 'Seminar Hall', 'Auditorium'];
 
   const addRoom = () => {
     if (!newRoom.name.trim()) { alert('Please enter a room name'); return; }
-    if (!newRoom.capacity || newRoom.capacity < 1) { alert('Please enter a valid capacity'); return; }
-    setRooms([...rooms, { ...newRoom, capacity: parseInt(newRoom.capacity) }]);
+    const cap = parseInt(newRoom.capacity);
+    if (!cap || cap < 1) { alert('Please enter a valid capacity'); return; }
+    setRooms([...rooms, { ...newRoom, capacity: cap }]);
     setNewRoom({ name: '', capacity: '', type: 'Classroom' });
   };
 
@@ -48,7 +52,8 @@ const ClassroomSetup = () => {
     navigate('/screen-6');
   };
 
-  const totalCapacity = rooms.reduce((s, r) => s + r.capacity, 0);
+  const totalCapacity = rooms.reduce((s, r) => s + (parseInt(r.capacity) || 0), 0);
+
 
   return (
     <div className="max-w-4xl mx-auto">

@@ -292,8 +292,17 @@ export { apiClient };
 // Simple timetable generation (no DB setup needed)
 export const simpleTimetableAPI = {
   generate: (data) => apiClient.post('/timetable/generate-simple', data),
-};
 
+  // Compute analytics from solver result (real data, no DB)
+  getAnalytics: (resultData) => apiClient.post('/timetable/analytics', resultData),
+
+  // Export timetable to Excel (.xlsx binary)
+  exportExcel: (resultData) =>
+    apiClient.post('/timetable/export/excel', resultData, { responseType: 'blob' }),
+
+  // Save generated timetable to Supabase DB
+  saveTimetable: (data) => apiClient.post('/timetable/save', data),
+};
 
 // Export base URLs for WebSocket and other purposes
 export const config = {

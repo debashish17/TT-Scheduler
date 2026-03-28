@@ -1,125 +1,142 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaPlay, FaArrowLeft, FaSchool, FaBook, FaClock, FaDoorOpen, FaClipboardList, FaUsers } from 'react-icons/fa';
+import { FaPlay, FaArrowLeft, FaSchool, FaBook, FaClock, FaDoorOpen, FaClipboardList, FaUsers, FaTrash } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 import { simpleTimetableAPI } from '../../api/client';
 
 const SetupSummary = () => {
   const navigate = useNavigate();
   const {
-    institutionData, classesData, subjectsData, teachersData, timeData, roomsData, constraintsData,
-    setGeneratedTimetable, setTimetableError
+    institutionData, classesData, subjectsData, teachersData,
+    timeData, roomsData, constraintsData,
+    setGeneratedTimetable, setTimetableError, clearOnboardingData
   } = useOnboardingStore();
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState(null);
 
+  // ── Hard Reset ──────────────────────────────────────────────
+  const handleReset = () => {
+    if (window.confirm('Clear ALL onboarding data and start over from Step 1?')) {
+      clearOnboardingData();
+      navigate('/screen-1');
+    }
+  };
+
+  // ── Section definitions (with defensive filtering) ──────────
   const sections = [
     {
       icon: <FaSchool className="text-blue-500" />,
       title: 'Institution',
       ready: !!institutionData,
       detail: institutionData?.name || 'Not set',
-      action: '/screen-1'
+      action: '/screen-1',
     },
     {
       icon: <FaUsers className="text-indigo-500" />,
       title: 'Batches',
-      ready: classesData?.length > 0,
-      detail: classesData?.length > 0
-        ? `${classesData.length} batches, ${classesData.reduce((s, b) => s + (b.size || 0), 0)} students`
+      ready: (classesData || []).filter(c => c?.name?.trim()).length > 0,
+      detail: (classesData || []).filter(c => c?.name?.trim()).length > 0
+        ? `${classesData.filter(c => c?.name?.trim()).length} batches`
         : 'No batches added',
-      action: '/screen-2'
+      action: '/screen-2',
     },
     {
       icon: <FaBook className="text-green-500" />,
       title: 'Subjects',
-      ready: subjectsData?.length > 0,
-      detail: subjectsData?.length > 0
-        ? `${subjectsData.length} subjects, ${subjectsData.reduce((s, sub) => s + (sub.periods_per_week || 0), 0)} periods/week/class`
+      ready: (subjectsData || []).filter(s => s?.name?.trim() && s?.code?.trim()).length > 0,
+      detail: (subjectsData || []).filter(s => s?.name?.trim() && s?.code?.trim()).length > 0
+        ? `${subjectsData.filter(s => s?.name?.trim() && s?.code?.trim()).length} subjects`
         : 'No subjects added',
-      action: '/screen-3'
+      action: '/screen-3',
     },
     {
       icon: <FaClock className="text-purple-500" />,
       title: 'Schedule',
-      ready: !!timeData,
-      detail: timeData
-        ? `${timeData.workingDays?.length} days, ${timeData.periodsPerDay} periods/day`
+      ready: !!(timeData?.workingDays?.length > 0 && (parseInt(timeData?.periodsPerDay) || 0) > 0),
+      detail: timeData?.workingDays?.length > 0
+        ? `${timeData.workingDays.length} days, ${parseInt(timeData.periodsPerDay) || '?'} periods/day`
         : 'Not set',
-      action: '/screen-4'
+      action: '/screen-4',
     },
     {
       icon: <FaDoorOpen className="text-orange-500" />,
       title: 'Classrooms',
-      ready: roomsData?.length > 0,
-      detail: roomsData?.length > 0
-        ? `${roomsData.length} rooms, total capacity: ${roomsData.reduce((s, r) => s + (r.capacity || 0), 0)}`
+      ready: (roomsData || []).filter(r => r?.name?.trim()).length > 0,
+      detail: (roomsData || []).filter(r => r?.name?.trim()).length > 0
+        ? `${roomsData.filter(r => r?.name?.trim()).length} rooms`
         : 'No rooms added',
-      action: '/screen-5'
+      action: '/screen-5',
     },
     {
       icon: <FaClipboardList className="text-red-500" />,
       title: 'Rules',
       ready: !!constraintsData,
       detail: constraintsData
-        ? `Max ${constraintsData.max_consecutive_periods} consecutive periods`
+        ? `Max ${parseInt(constraintsData.max_consecutive_periods) || 3} consecutive periods`
         : 'Using defaults',
-      action: '/screen-6'
+      action: '/screen-6',
     },
   ];
 
-  const allReady = sections.every(s => s.ready);
   const missingRequired = sections.filter(s => !s.ready && s.title !== 'Rules');
 
+  // ── Build request (fully defensive — filters bad persisted data) ──
   const buildRequest = () => {
-    const subj = (subjectsData || []).map(s => ({
-      name: s.name,
-      code: s.code,
-      periods_per_week: s.periods_per_week || 3,
-      target_classes: s.target_classes || []
-    }));
+    const subj = (subjectsData || [])
+      .filter(s => s?.name?.trim() && s?.code?.trim())
+      .map(s => ({
+        name: s.name.trim(),
+        code: s.code.trim(),
+        periods_per_week: Math.max(1, parseInt(s.periods_per_week) || 3),
+        target_classes: Array.isArray(s.target_classes) ? s.target_classes : [],
+      }));
 
-    const teachers = (teachersData || []).filter(t => t.name).map(t => ({
-      name: t.name,
-      subjects: t.subjects || [],
-    }));
+    const teachers = (teachersData || [])
+      .filter(t => t?.name?.trim())
+      .map(t => ({
+        name: t.name.trim(),
+        subjects: Array.isArray(t.subjects) ? t.subjects.filter(Boolean) : [],
+      }));
 
-    // If no teachers, auto-generate one per subject
-    const finalTeachers = teachers.length > 0 ? teachers :
-      subj.map(s => ({ name: `${s.name} Teacher`, subjects: [s.code] }));
+    const finalTeachers = teachers.length > 0
+      ? teachers
+      : subj.map(s => ({ name: `${s.name} Teacher`, subjects: [s.code] }));
 
-    const classes = (classesData || []).map(c => ({
-      name: c.name,
-      size: parseInt(c.size) || 30
-    }));
+    const classes = (classesData || [])
+      .filter(c => c?.name?.trim())
+      .map(c => ({ name: c.name.trim(), size: Math.max(1, parseInt(c.size) || 30) }));
 
-    const rooms = (roomsData || []).map(r => ({
-      name: r.name,
-      capacity: parseInt(r.capacity) || 40,
-    }));
+    const rooms = (roomsData || [])
+      .filter(r => r?.name?.trim())
+      .map(r => ({ name: r.name.trim(), capacity: Math.max(1, parseInt(r.capacity) || 40) }));
 
     const td = timeData || {};
     const constraints = constraintsData || {};
+    const periodsPerDay = Math.max(1, parseInt(td.periodsPerDay) || 7);
+    const lunchAfterPeriod = td.haslunch ? Math.max(0, parseInt(td.lunchAfterPeriod) || 4) : 0;
 
     return {
-      institution_name: institutionData?.name || 'My School',
+      institution_name: institutionData?.name?.trim() || 'My School',
       subjects: subj,
       teachers: finalTeachers,
       classes,
       rooms,
-      working_days: td.workingDays || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-      periods_per_day: td.periodsPerDay || 7,
-      period_duration_minutes: td.periodDuration || 45,
+      working_days: Array.isArray(td.workingDays) && td.workingDays.length > 0
+        ? td.workingDays
+        : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+      periods_per_day: periodsPerDay,
+      period_duration_minutes: Math.max(15, parseInt(td.periodDuration) || 45),
       start_time: td.startTime || '08:00',
       constraints: {
-        max_consecutive_periods: constraints.max_consecutive_periods || 3,
-        lunch_after_period: constraints.lunch_after_period || (td.haslunch ? (td.lunchAfterPeriod || 4) : 0),
-        max_periods_per_day_per_teacher: constraints.max_periods_per_day_per_teacher || 6,
-      }
+        max_consecutive_periods: Math.max(1, parseInt(constraints.max_consecutive_periods) || 3),
+        lunch_after_period: lunchAfterPeriod,
+        max_periods_per_day_per_teacher: Math.max(1, parseInt(constraints.max_periods_per_day_per_teacher) || 6),
+      },
     };
   };
 
+  // ── Generate ────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (missingRequired.length > 0) {
       setError(`Please complete: ${missingRequired.map(s => s.title).join(', ')}`);
@@ -132,11 +149,56 @@ const SetupSummary = () => {
       const request = buildRequest();
       console.log('Generating timetable with:', request);
 
+      // Client-side guard — prevent sending empty arrays
+      if (!request.subjects.length) {
+        setError('No valid subjects found — go back to Subjects and add at least one.');
+        return;
+      }
+      if (!request.classes.length) {
+        setError('No valid classes found — go back to Batches and add at least one.');
+        return;
+      }
+      if (!request.rooms.length) {
+        setError('No valid rooms found — go back to Classrooms and add at least one with a name.');
+        return;
+      }
+
       const response = await simpleTimetableAPI.generate(request);
-      setGeneratedTimetable(response.data);
+      const timetableData = response.data;
+      setGeneratedTimetable(timetableData);
+
+      // Auto-save to DB (non-blocking — failure shows warning, doesn't block navigation)
+      try {
+        const savePayload = {
+          institution_name: request.institution_name,
+          name: `${request.institution_name} Timetable`,
+          solver: timetableData.solver || 'CP-SAT',
+          status: timetableData.status || 'FEASIBLE',
+          solve_time: timetableData.solve_time || 0,
+          assignments: timetableData.assignments || [],
+          working_days: request.working_days,
+          periods_per_day: request.periods_per_day,
+          stats: timetableData.stats || {},
+        };
+        const saveResult = await simpleTimetableAPI.saveTimetable(savePayload);
+        console.log('Timetable saved to DB:', saveResult.data);
+      } catch (saveErr) {
+        // Don't block the user — just log the warning
+        console.warn('DB save warning (timetable still visible):', saveErr.message);
+      }
+
       navigate('/timetable');
+
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Generation failed';
+      let detail = err.response?.data?.detail;
+      let msg;
+      if (Array.isArray(detail)) {
+        msg = detail.map(d => `${d.loc?.slice(-1)[0] || 'field'}: ${d.msg}`).join('; ');
+      } else if (detail && typeof detail === 'object') {
+        msg = JSON.stringify(detail);
+      } else {
+        msg = detail || err.message || 'Generation failed';
+      }
       setError(msg);
       setTimetableError(msg);
     } finally {
@@ -147,12 +209,21 @@ const SetupSummary = () => {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-white rounded-2xl shadow-lg p-8">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
-            <FaPlay className="text-2xl text-green-600" />
+        <div className="flex items-start justify-between mb-8">
+          <div className="text-center flex-1">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
+              <FaPlay className="text-2xl text-green-600" />
+            </div>
+            <h1 className="text-3xl font-bold text-gray-900">Ready to Generate</h1>
+            <p className="text-gray-500 mt-1">Review your setup and generate your timetable using CP-SAT</p>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Ready to Generate</h1>
-          <p className="text-gray-500 mt-1">Review your setup, then generate your timetable using the CP-SAT optimizer</p>
+          {/* Reset button */}
+          <button
+            onClick={handleReset}
+            title="Clear all data and start over"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+            <FaTrash size={10} /> Reset All
+          </button>
         </div>
 
         {/* Summary Cards */}
@@ -177,17 +248,17 @@ const SetupSummary = () => {
           ))}
         </div>
 
-        {/* Error */}
+        {/* Error display */}
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
             ❌ {error}
           </div>
         )}
 
-        {/* Teacher note */}
+        {/* Teacher auto-note */}
         {(!teachersData || teachersData.length === 0) && (
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-sm">
-            💡 No teachers were added — the solver will auto-create one teacher per subject.
+            💡 No teachers added — the solver will auto-create one teacher per subject.
           </div>
         )}
 
@@ -212,7 +283,7 @@ const SetupSummary = () => {
             ) : '🎯 Generate Timetable with CP-SAT'}
           </button>
           {isGenerating && (
-            <p className="text-sm text-gray-500 mt-3">The CP-SAT solver is optimizing your schedule. This may take up to 30 seconds.</p>
+            <p className="text-sm text-gray-500 mt-3">CP-SAT solver is working. This may take up to 30 seconds.</p>
           )}
         </div>
 

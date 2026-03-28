@@ -68,9 +68,11 @@ const DepartmentSetup = () => {
   const removeSubject = (i) => setSubjects(subjects.filter((_, idx) => idx !== i));
   const update = (i, field, value) => {
     const updated = [...subjects];
-    updated[i][field] = value;
+    // Always store numeric fields as numbers, not strings
+    updated[i][field] = field === 'periods_per_week' ? (parseInt(value) || 1) : value;
     setSubjects(updated);
   };
+
   
   const toggleClass = (i, className) => {
     const updated = [...subjects];

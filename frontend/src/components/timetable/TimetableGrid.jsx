@@ -1,13 +1,26 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaCalendarAlt, FaUserTie, FaGraduationCap, FaArrowLeft } from 'react-icons/fa';
+import { FaCalendarAlt, FaUserTie, FaGraduationCap, FaArrowLeft, FaFileExcel, FaPrint, FaChartBar, FaRedo } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
+import { simpleTimetableAPI } from '../../api/client';
+import toast from 'react-hot-toast';
+
+const COLORS = [
+  'bg-blue-100 text-blue-800 border-blue-200',
+  'bg-green-100 text-green-800 border-green-200',
+  'bg-purple-100 text-purple-800 border-purple-200',
+  'bg-orange-100 text-orange-800 border-orange-200',
+  'bg-pink-100 text-pink-800 border-pink-200',
+  'bg-yellow-100 text-yellow-800 border-yellow-200',
+  'bg-teal-100 text-teal-800 border-teal-200',
+  'bg-indigo-100 text-indigo-800 border-indigo-200',
+];
 
 const TimetableGrid = () => {
   const navigate = useNavigate();
-  const { generatedTimetable, institutionData, timeData } = useOnboardingStore();
-
-  const [activeView, setActiveView] = useState('master'); // 'master' | 'faculty' | 'student'
+  const { generatedTimetable, institutionData } = useOnboardingStore();
+  const [selectedClass, setSelectedClass] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   if (!generatedTimetable) {
     return (
@@ -15,7 +28,7 @@ const TimetableGrid = () => {
         <div className="text-6xl mb-4">📅</div>
         <h2 className="text-2xl font-bold text-gray-800 mb-2">No Timetable Generated</h2>
         <p className="text-gray-500 mb-6">Complete the setup and generate a timetable first.</p>
-        <button onClick={() => navigate('/screen-6')}
+        <button onClick={() => navigate('/screen-1')}
           className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
           Go to Setup
         </button>
@@ -25,25 +38,13 @@ const TimetableGrid = () => {
 
   const { assignments = [], working_days = [], time_slots = [], stats = {} } = generatedTimetable;
 
-  // Get unique classes and compute their grids
   const classes = [...new Set(assignments.map(a => a.class_name))].sort();
+  const currentClass = selectedClass || classes[0] || '';
 
-  // Color map for subjects
-  const COLORS = [
-    'bg-blue-100 text-blue-800 border-blue-200',
-    'bg-green-100 text-green-800 border-green-200',
-    'bg-purple-100 text-purple-800 border-purple-200',
-    'bg-orange-100 text-orange-800 border-orange-200',
-    'bg-pink-100 text-pink-800 border-pink-200',
-    'bg-yellow-100 text-yellow-800 border-yellow-200',
-    'bg-teal-100 text-teal-800 border-teal-200',
-    'bg-indigo-100 text-indigo-800 border-indigo-200',
-  ];
   const allSubjects = [...new Set(assignments.map(a => a.subject_code))];
   const subjectColors = {};
   allSubjects.forEach((code, i) => { subjectColors[code] = COLORS[i % COLORS.length]; });
 
-  // Build grid for a specific class
   const buildClassGrid = (className) => {
     const grid = {};
     working_days.forEach(day => { grid[day] = {}; });
@@ -54,34 +55,75 @@ const TimetableGrid = () => {
     return grid;
   };
 
-  const [selectedClass, setSelectedClass] = useState(classes[0] || '');
-  const classGrid = buildClassGrid(selectedClass);
-
+  const classGrid = buildClassGrid(currentClass);
   const periods = time_slots.map((s, i) => ({ period: i + 1, ...s }));
+
+  // ── Export to Excel ─────────────────────────────
+  const handleExportExcel = async () => {
+    setExporting(true);
+    const toastId = toast.loading('Generating Excel file…');
+    try {
+      const payload = {
+        institution_name: institutionData?.name || 'My School',
+        assignments,
+        working_days,
+        time_slots,
+        stats,
+      };
+      const res = await simpleTimetableAPI.exportExcel(payload);
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${(institutionData?.name || 'Timetable').replace(/ /g, '_')}_Timetable.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Excel file downloaded!', { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error('Export failed. Is the backend running?', { id: toastId });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // ── Print ──────────────────────────────────────
+  const handlePrint = () => window.print();
 
   return (
     <div className="max-w-7xl mx-auto">
+      {/* Print-only header */}
+      <div className="hidden print:block text-center mb-4">
+        <h1 className="text-2xl font-bold">{institutionData?.name || 'School'} — Timetable</h1>
+        <p className="text-sm text-gray-500">Class: {currentClass}</p>
+      </div>
+
       {/* Header */}
-      <div className="bg-white rounded-2xl shadow-lg p-6 mb-4">
+      <div className="bg-white rounded-2xl shadow-lg p-6 mb-4 print:hidden">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
               📅 {institutionData?.name || 'School'} Timetable
             </h1>
             <p className="text-gray-500 text-sm mt-1">
-              Generated with CP-SAT • {stats.total_assignments} assignments • {stats.solve_time_seconds}s solve time
+              {stats.solver || 'CP-SAT'} solver • {stats.total_assignments} assignments •{' '}
+              {stats.solve_time_seconds}s solve time
             </p>
           </div>
 
           {/* View Tabs */}
           <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
             {[
-              { id: 'master', icon: <FaCalendarAlt />, label: 'Class View' },
-              { id: 'faculty', icon: <FaUserTie />, label: 'Faculty View' },
+              { id: 'class', icon: <FaCalendarAlt />, label: 'Class', path: '/timetable' },
+              { id: 'faculty', icon: <FaUserTie />, label: 'Faculty', path: '/faculty-view' },
+              { id: 'student', icon: <FaGraduationCap />, label: 'Student', path: '/student-view' },
+              { id: 'analytics', icon: <FaChartBar />, label: 'Analytics', path: '/analytics' },
             ].map(tab => (
-              <button key={tab.id} onClick={() => navigate(tab.id === 'faculty' ? '/faculty-view' : '/timetable')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  activeView === tab.id ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-800'
+              <button key={tab.id}
+                onClick={() => navigate(tab.path)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  tab.id === 'class' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-800'
                 }`}>
                 {tab.icon}{tab.label}
               </button>
@@ -92,11 +134,14 @@ const TimetableGrid = () => {
 
       {/* Class Selector */}
       {classes.length > 1 && (
-        <div className="flex gap-2 mb-4 flex-wrap">
+        <div className="flex gap-2 mb-4 flex-wrap print:hidden">
           {classes.map(cls => (
-            <button key={cls} onClick={() => setSelectedClass(cls)}
+            <button key={cls}
+              onClick={() => setSelectedClass(cls)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                selectedClass === cls ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                currentClass === cls
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
               }`}>
               {cls}
             </button>
@@ -161,22 +206,49 @@ const TimetableGrid = () => {
       </div>
 
       {/* Action bar */}
-      <div className="mt-4 flex justify-between items-center">
-        <button onClick={() => navigate('/screen-6')}
+      <div className="mt-4 flex flex-wrap justify-between items-center gap-3 print:hidden">
+        <button onClick={() => navigate('/screen-7')}
           className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm">
-          <FaArrowLeft size={12} /> Back to Setup
+          <FaRedo size={12} /> Regenerate
         </button>
-        <div className="flex gap-3">
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={handleExportExcel}
+            disabled={exporting}
+            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium disabled:opacity-60 transition-colors">
+            <FaFileExcel /> {exporting ? 'Exporting…' : 'Export Excel'}
+          </button>
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-2 px-5 py-2.5 bg-slate-600 text-white rounded-lg hover:bg-slate-700 text-sm font-medium">
+            <FaPrint /> Print
+          </button>
           <button onClick={() => navigate('/faculty-view')}
             className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium">
-            <FaUserTie /> Faculty View
+            <FaUserTie /> Faculty
           </button>
           <button onClick={() => navigate('/student-view')}
             className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
-            <FaGraduationCap /> Student View
+            <FaGraduationCap /> Student
+          </button>
+          <button onClick={() => navigate('/analytics')}
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
+            <FaChartBar /> Analytics
           </button>
         </div>
       </div>
+
+      {/* Print styles */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          .max-w-7xl, .max-w-7xl * { visibility: visible; }
+          .max-w-7xl { position: absolute; left: 0; top: 0; width: 100%; }
+          .print\\:hidden { display: none !important; }
+          .print\\:block { display: block !important; }
+        }
+      `}</style>
     </div>
   );
 };

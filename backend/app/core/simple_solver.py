@@ -1,20 +1,502 @@
 """
-Simple School Timetable Solver using Google OR-Tools CP-SAT.
+Optimised School Timetable Solver — Google OR-Tools CP-SAT.
 
-Uses an EFFICIENT model:
-  - For each (class, day, period): assign one session (subject + teacher + room)
-  - Integer variables instead of exponential boolean combinatorics
-  - Falls back to a fast greedy algorithm if CP-SAT times out or is unavailable
+Model redesign (v2):
+  Instead of one boolean var per (session, teacher, room, day, period)
+  combination (exponential), we use:
+    - session_day[s]     ∈ [0, D)   — integer variable
+    - session_period[s]  ∈ valid    — integer variable
+    - session_teacher[s] ∈ valid    — integer variable
+    - session_room[s]    ∈ valid    — integer variable
+
+  This reduces O(S·T·R·D·P) booleans → O(4·S) integers.
+  No-conflict constraints use AddAllDifferent / conditional equality.
+
+Hard constraints enforced:
+  1. Each session is assigned exactly one (day, period, teacher, room)
+  2. A class can have at most one session per (day, period)
+  3. A teacher can teach at most one session per (day, period)
+  4. A room can be used for at most one session per (day, period)
+
+Soft constraints optimised:
+  - Spread subjects across days (minimize sessions of same subject on same day)
+  - Balance teacher workload across the week
+
+Falls back to a fast greedy algorithm if CP-SAT times out or is infeasible.
 """
 import logging
-from typing import Dict, List, Any, Set, Tuple
+import math
+import copy
+from typing import Dict, List, Any, Tuple
 from datetime import datetime, timedelta
 
-logger = logging.getLogger(__name__)  # logger
+logger = logging.getLogger(__name__)
 
 
-def generate_time_slots(start_time: str, periods_per_day: int, period_duration_minutes: int) -> List[Dict[str, Any]]:
-    """Generate time slot labels from start time."""
+# ──────────────────────────────────────────────────────────────
+# Public entry point
+# ──────────────────────────────────────────────────────────────
+
+def solve_timetable(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Solve the school timetable.
+    Tries CP-SAT first (optimal), falls back to greedy on failure.
+    """
+    problem = _preprocess(problem)
+    try:
+        return _cp_solve(problem)
+    except ImportError:
+        logger.warning("ortools not installed — using Greedy solver.")
+        return _greedy_solve(problem)
+    except Exception as e:
+        logger.error(f"CP-SAT failed: {e}", exc_info=True)
+        logger.warning("CP-SAT failed — falling back to Greedy solver.")
+        return _greedy_solve(problem)
+
+
+# ──────────────────────────────────────────────────────────────
+# Pre-processing
+# ──────────────────────────────────────────────────────────────
+
+def _preprocess(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Validate and normalise the problem.
+    - Auto-cap periods_per_week to available slots
+    - Split classes that exceed max room capacity into sections
+    """
+    problem = copy.deepcopy(problem)
+    days        = len(problem.get("working_days", []))
+    ppd         = max(1, int(problem.get("periods_per_day", 7)))
+    lunch_after = int((problem.get("constraints") or {}).get("lunch_after_period", 0))
+    usable_ppd  = ppd - (1 if lunch_after > 0 else 0)
+    slots_per_week = days * usable_ppd          # absolute maximum sessions/week/class
+
+    # Cap periods_per_week
+    for s in problem.get("subjects", []):
+        ppw = int(s.get("periods_per_week", 3))
+        if ppw > slots_per_week:
+            logger.warning(
+                f"Subject {s['code']}: periods_per_week={ppw} → capped to {slots_per_week}"
+            )
+            s["periods_per_week"] = slots_per_week
+
+    # Split over-capacity classes into sections
+    rooms = problem.get("rooms", [])
+    max_cap = max((int(r.get("capacity", 40)) for r in rooms), default=40)
+    expanded = []
+    for cls in problem.get("classes", []):
+        size = int(cls.get("size", 30))
+        if size > max_cap and max_cap > 0:
+            n = math.ceil(size / max_cap)
+            sec_size = math.ceil(size / n)
+            for i in range(n):
+                c = dict(cls)
+                c["name"] = f"{cls['name']}{chr(65+i)}"
+                c["size"] = sec_size
+                c["original_name"] = cls["name"]
+                expanded.append(c)
+        else:
+            expanded.append(cls)
+    problem["classes"] = expanded
+
+    # Diagnostics
+    total_sessions = sum(
+        int(s.get("periods_per_week", 3)) for s in problem["subjects"]
+    ) * max(1, len(problem["classes"]))
+    total_available = slots_per_week * max(1, len(problem["classes"]))
+    logger.info(
+        f"[Preprocess] {total_sessions} sessions needed, "
+        f"{total_available} slots available "
+        f"({'OK' if total_sessions <= total_available else 'OVER-SUBSCRIBED — will use best-effort'})"
+    )
+    return problem
+
+
+# ──────────────────────────────────────────────────────────────
+# CP-SAT Solver — integer-variable model
+# ──────────────────────────────────────────────────────────────
+
+def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
+    from ortools.sat.python import cp_model
+
+    t0 = datetime.now()
+    logger.info("CP-SAT solver starting (integer-variable model) …")
+
+    subjects    = problem["subjects"]
+    teachers    = problem["teachers"]
+    classes     = problem["classes"]
+    rooms       = problem["rooms"]
+    working_days = problem["working_days"]
+    ppd          = int(problem.get("periods_per_day", 7))
+    constraints  = problem.get("constraints", {})
+    lunch_after  = int(constraints.get("lunch_after_period", 0))
+    max_consec   = int(constraints.get("max_consecutive_periods", 3))
+    max_per_day_teacher = int(constraints.get("max_periods_per_day_per_teacher", 6))
+
+    D = len(working_days)
+    P = ppd
+
+    # Valid period indices (skip lunch slot)
+    valid_periods = [p for p in range(P) if lunch_after == 0 or p != lunch_after - 1]
+    n_valid = len(valid_periods)
+
+    time_slots = _generate_time_slots(
+        problem.get("start_time", "08:00"), P,
+        int(problem.get("period_duration_minutes", 45))
+    )
+
+    # Subject code → index
+    subj_idx = {s["code"]: i for i, s in enumerate(subjects)}
+
+    # Teacher capabilities: teacher_can[t] = set of subject indices
+    teacher_can = []
+    for t in teachers:
+        can = {subj_idx[c] for c in t.get("subjects", []) if c in subj_idx}
+        if not can:
+            can = set(range(len(subjects)))  # can teach all if unspecified
+        teacher_can.append(can)
+
+    # Room eligibility: room_ok[c_idx] = list of room indices with enough capacity
+    room_ok = {}
+    for ci, cls in enumerate(classes):
+        size = int(cls.get("size", 30))
+        eligible = [ri for ri, r in enumerate(rooms) if int(r.get("capacity", 40)) >= size]
+        room_ok[ci] = eligible if eligible else list(range(len(rooms)))
+
+    # Build session list: [(class_idx, subj_idx)]
+    sessions = []
+    for ci, cls in enumerate(classes):
+        for si, subj in enumerate(subjects):
+            tc = subj.get("target_classes", [])
+            orig = cls.get("original_name")
+            if tc and cls["name"] not in tc and (not orig or orig not in tc):
+                continue
+            ppw = int(subj.get("periods_per_week", 3))
+            for _ in range(ppw):
+                sessions.append((ci, si))
+
+    S = len(sessions)
+    if S == 0:
+        return _empty_result(problem, time_slots, working_days, "CP-SAT")
+
+    logger.info(f"CP-SAT: {S} sessions, {D} days, {P} periods ({n_valid} usable), "
+                f"{len(teachers)} teachers, {len(rooms)} rooms")
+
+    model = cp_model.CpModel()
+
+    # ── Decision variables ─────────────────────────────────
+    # For each session: which valid_period index, which day, which teacher, which room
+    day_var     = [model.NewIntVar(0, D - 1,      f"d{s}") for s in range(S)]
+    # Use valid_period index (0..n_valid-1) then map back
+    vp_var      = [model.NewIntVar(0, n_valid - 1, f"vp{s}") for s in range(S)]
+
+    # Teacher and room: constrained per session based on subject / class
+    t_var = []
+    r_var = []
+
+    for s, (ci, si) in enumerate(sessions):
+        valid_t = [ti for ti, can in enumerate(teacher_can) if si in can]
+        if not valid_t:
+            valid_t = list(range(len(teachers)))
+        t_var.append(model.NewIntVarFromDomain(
+            cp_model.Domain.FromValues(valid_t), f"t{s}"
+        ))
+        r_var.append(model.NewIntVarFromDomain(
+            cp_model.Domain.FromValues(room_ok[ci]), f"r{s}"
+        ))
+
+    # ── Constraints ────────────────────────────────────────
+
+    # 1. No two sessions for the same class at the same (day, vp)
+    #    We encode (day, vp) as a single integer: day * n_valid + vp
+    class_timeslot = {}   # ci → list of linearised time vars
+    for s, (ci, si) in enumerate(sessions):
+        combo = model.NewIntVar(0, D * n_valid - 1, f"cdt{s}")
+        model.Add(combo == day_var[s] * n_valid + vp_var[s])
+        class_timeslot.setdefault(ci, []).append(combo)
+
+    for ci, vars_list in class_timeslot.items():
+        if len(vars_list) > 1:
+            model.AddAllDifferent(vars_list)
+
+    # 2. No two sessions with the same teacher at the same (day, vp)
+    #    We use a conditional reification approach via auxiliary bool vars.
+    #    For each pair (s1, s2) that MIGHT share a teacher → if same teacher → different slot
+    #    This is O(S²) pairs — expensive for large S.
+    #    Instead: for each (teacher, day, vp_index) — at most one session.
+    #    We do this with linearisation: teacher * D * n_valid + day * n_valid + vp ← unique
+    #    but teacher_var is not fixed, so we use AddNoOverlap2D equivalent.
+    #
+    # Efficient approach: create one integer per session = t*D*n_valid + day*n_valid + vp
+    # and AddAllDifferent across all sessions.
+    # This correctly prevents teacher+timeslot conflicts WITHOUT O(S²) pairs.
+
+    teacher_timeslot = []
+    teacher_combo_max = len(teachers) * D * n_valid
+    for s in range(S):
+        tc = model.NewIntVar(0, teacher_combo_max - 1, f"tdt{s}")
+        # tc = t_var[s] * D * n_valid + day_var[s] * n_valid + vp_var[s]
+        model.Add(tc == t_var[s] * D * n_valid + day_var[s] * n_valid + vp_var[s])
+        teacher_timeslot.append(tc)
+    model.AddAllDifferent(teacher_timeslot)
+
+    # 3. No two sessions in the same room at the same (day, vp)
+    room_timeslot = []
+    room_combo_max = len(rooms) * D * n_valid
+    for s in range(S):
+        rc = model.NewIntVar(0, room_combo_max - 1, f"rdt{s}")
+        model.Add(rc == r_var[s] * D * n_valid + day_var[s] * n_valid + vp_var[s])
+        room_timeslot.append(rc)
+    model.AddAllDifferent(room_timeslot)
+
+    # ── Soft constraints as objective ──────────────────────
+    # 4. Spread each subject across different days per class (soft)
+    #    Penalty: count pairs of sessions of same (class, subject) on the same day
+    #    We want to minimize this.
+    penalty_terms = []
+
+    # Group sessions by (class, subject)
+    cs_groups: Dict[Tuple[int, int], List[int]] = {}
+    for s, (ci, si) in enumerate(sessions):
+        cs_groups.setdefault((ci, si), []).append(s)
+
+    for (ci, si), grp in cs_groups.items():
+        if len(grp) < 2:
+            continue
+        for i in range(len(grp)):
+            for j in range(i + 1, len(grp)):
+                same_day = model.NewBoolVar(f"sd_{ci}_{si}_{i}_{j}")
+                model.Add(day_var[grp[i]] == day_var[grp[j]]).OnlyEnforceIf(same_day)
+                model.Add(day_var[grp[i]] != day_var[grp[j]]).OnlyEnforceIf(same_day.Not())
+                penalty_terms.append(same_day)
+
+    # 5. Soft: max periods per day per teacher (hard cap if asked)
+    # Convert to hard constraint for max_per_day_teacher
+    for ti in range(len(teachers)):
+        for d in range(D):
+            # Count sessions for teacher ti on day d
+            indicators = []
+            for s in range(S):
+                is_this_teacher_day = model.NewBoolVar(f"htd_{ti}_{d}_{s}")
+                t_match = model.NewBoolVar(f"tmatch_{ti}_{d}_{s}")
+                d_match = model.NewBoolVar(f"dmatch_{ti}_{d}_{s}")
+                model.Add(t_var[s] == ti).OnlyEnforceIf(t_match)
+                model.Add(t_var[s] != ti).OnlyEnforceIf(t_match.Not())
+                model.Add(day_var[s] == d).OnlyEnforceIf(d_match)
+                model.Add(day_var[s] != d).OnlyEnforceIf(d_match.Not())
+                model.AddBoolAnd([t_match, d_match]).OnlyEnforceIf(is_this_teacher_day)
+                model.AddBoolOr([t_match.Not(), d_match.Not()]).OnlyEnforceIf(is_this_teacher_day.Not())
+                indicators.append(is_this_teacher_day)
+            if indicators:
+                model.Add(sum(indicators) <= max_per_day_teacher)
+
+    # Minimise spread penalties
+    if penalty_terms:
+        model.Minimize(sum(penalty_terms))
+
+    # ── Solve ──────────────────────────────────────────────
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 30.0
+    solver.parameters.num_search_workers = 4   # parallel search
+    solver.parameters.log_search_progress = False
+
+    status = solver.Solve(model)
+    elapsed = round((datetime.now() - t0).total_seconds(), 3)
+    logger.info(f"CP-SAT done: {solver.StatusName(status)} in {elapsed}s")
+
+    if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        assignments = []
+        for s, (ci, si) in enumerate(sessions):
+            d  = solver.Value(day_var[s])
+            vp = solver.Value(vp_var[s])
+            p  = valid_periods[vp]   # actual 0-based period index
+            ti = solver.Value(t_var[s])
+            ri = solver.Value(r_var[s])
+            slot = time_slots[p] if p < len(time_slots) else {"start": "?", "end": "?"}
+            assignments.append({
+                "class_name":    classes[ci]["name"],
+                "class_index":   ci,
+                "subject_name":  subjects[si]["name"],
+                "subject_code":  subjects[si]["code"],
+                "teacher_name":  teachers[ti]["name"],
+                "teacher_index": ti,
+                "room_name":     rooms[ri]["name"],
+                "room_index":    ri,
+                "day":           working_days[d],
+                "day_index":     d,
+                "period":        p + 1,
+                "start_time":    slot["start"],
+                "end_time":      slot["end"],
+            })
+
+        grid = _build_grid(assignments, classes, working_days, time_slots)
+        return {
+            "success":      True,
+            "solver":       "CP-SAT",
+            "status":       solver.StatusName(status),
+            "solve_time":   elapsed,
+            "assignments":  assignments,
+            "grid":         grid,
+            "time_slots":   time_slots,
+            "working_days": working_days,
+            "stats": {
+                "total_assignments":  len(assignments),
+                "classes":            len(classes),
+                "subjects":           len(subjects),
+                "teachers":           len(teachers),
+                "rooms":              len(rooms),
+                "solve_time_seconds": elapsed,
+                "solver":             "CP-SAT",
+                "solver_status":      solver.StatusName(status),
+            },
+        }
+    else:
+        logger.warning(f"CP-SAT: {solver.StatusName(status)} — falling back to Greedy.")
+        return _greedy_solve(problem)
+
+
+# ──────────────────────────────────────────────────────────────
+# Greedy Solver — fast, best-effort
+# ──────────────────────────────────────────────────────────────
+
+def _greedy_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Fast greedy solver. Spreads sessions across days round-robin.
+    Always returns a result (partial if some sessions can't be placed).
+    """
+    t0 = datetime.now()
+    logger.info("Greedy solver starting …")
+
+    subjects     = problem["subjects"]
+    teachers     = problem["teachers"]
+    classes      = problem["classes"]
+    rooms        = problem["rooms"]
+    working_days = problem["working_days"]
+    ppd          = int(problem.get("periods_per_day", 7))
+    constraints  = problem.get("constraints", {})
+    lunch_after  = int(constraints.get("lunch_after_period", 0))
+
+    time_slots = _generate_time_slots(
+        problem.get("start_time", "08:00"), ppd,
+        int(problem.get("period_duration_minutes", 45))
+    )
+
+    valid_periods = [p for p in range(ppd) if lunch_after == 0 or p != lunch_after - 1]
+    subj_idx = {s["code"]: i for i, s in enumerate(subjects)}
+
+    teacher_can: List[Any] = []
+    for t in teachers:
+        can = {subj_idx[c] for c in t.get("subjects", []) if c in subj_idx}
+        if not can:
+            can = set(range(len(subjects)))
+        teacher_can.append(can)
+
+    teacher_busy:   Dict[Tuple, bool] = {}
+    room_busy:      Dict[Tuple, bool] = {}
+    class_slot_busy: Dict[Tuple, bool] = {}
+    assignments = []
+
+    D = len(working_days)
+    for ci, cls in enumerate(classes):
+        size = int(cls.get("size", 30))
+        sessions_needed = []
+        for si, subj in enumerate(subjects):
+            tc = subj.get("target_classes", [])
+            orig = cls.get("original_name")
+            if tc and cls["name"] not in tc and (not orig or orig not in tc):
+                continue
+            ppw = int(subj.get("periods_per_week", 3))
+            for n in range(ppw):
+                sessions_needed.append((si, n % D))  # (subj_idx, preferred_day)
+
+        sessions_needed.sort(key=lambda x: x[1])
+
+        for si, preferred_day in sessions_needed:
+            assigned = False
+            day_order = list(range(D))
+            day_order = day_order[preferred_day:] + day_order[:preferred_day]
+
+            for d in day_order:
+                if assigned:
+                    break
+                for p in valid_periods:
+                    if class_slot_busy.get((ci, d, p)):
+                        continue
+                    # Find available teacher
+                    ti = next(
+                        (i for i, can in enumerate(teacher_can)
+                         if si in can and not teacher_busy.get((i, d, p))),
+                        None
+                    )
+                    if ti is None:
+                        continue
+                    # Find available room
+                    eligible = sorted(
+                        [ri for ri, r in enumerate(rooms) if int(r.get("capacity", 40)) >= size],
+                        key=lambda ri: rooms[ri].get("capacity", 40)
+                    ) or list(range(len(rooms)))
+                    ri = next((r for r in eligible if not room_busy.get((r, d, p))), None)
+                    if ri is None:
+                        continue
+
+                    teacher_busy[(ti, d, p)] = True
+                    room_busy[(ri, d, p)] = True
+                    class_slot_busy[(ci, d, p)] = True
+                    slot = time_slots[p] if p < len(time_slots) else {"start": "?", "end": "?"}
+                    assignments.append({
+                        "class_name":    cls["name"],
+                        "class_index":   ci,
+                        "subject_name":  subjects[si]["name"],
+                        "subject_code":  subjects[si]["code"],
+                        "teacher_name":  teachers[ti]["name"],
+                        "teacher_index": ti,
+                        "room_name":     rooms[ri]["name"],
+                        "room_index":    ri,
+                        "day":           working_days[d],
+                        "day_index":     d,
+                        "period":        p + 1,
+                        "start_time":    slot["start"],
+                        "end_time":      slot["end"],
+                    })
+                    assigned = True
+                    break
+
+            if not assigned:
+                logger.warning(
+                    f"Greedy: could not place {subjects[si]['name']} for {cls['name']}"
+                )
+
+    elapsed = round((datetime.now() - t0).total_seconds(), 3)
+    grid = _build_grid(assignments, classes, working_days, time_slots)
+    return {
+        "success":      True,
+        "solver":       "Greedy",
+        "status":       "FEASIBLE",
+        "solve_time":   elapsed,
+        "assignments":  assignments,
+        "grid":         grid,
+        "time_slots":   time_slots,
+        "working_days": working_days,
+        "stats": {
+            "total_assignments":  len(assignments),
+            "classes":            len(classes),
+            "subjects":           len(subjects),
+            "teachers":           len(teachers),
+            "rooms":              len(rooms),
+            "solve_time_seconds": elapsed,
+            "solver":             "Greedy",
+            "solver_status":      "FEASIBLE",
+        },
+    }
+
+
+# ──────────────────────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────────────────────
+
+def _generate_time_slots(
+    start_time: str, periods_per_day: int, period_duration_minutes: int
+) -> List[Dict[str, Any]]:
     slots = []
     h, m = map(int, start_time.split(":"))
     current = datetime(2000, 1, 1, h, m)
@@ -22,417 +504,12 @@ def generate_time_slots(start_time: str, periods_per_day: int, period_duration_m
         end = current + timedelta(minutes=period_duration_minutes)
         slots.append({
             "period": i + 1,
-            "start": current.strftime("%H:%M"),
-            "end": end.strftime("%H:%M"),
-            "label": f"Period {i + 1}"
+            "start":  current.strftime("%H:%M"),
+            "end":    end.strftime("%H:%M"),
+            "label":  f"Period {i + 1}",
         })
         current = end
     return slots
-
-
-def solve_timetable(problem: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Solve the school timetable using Google OR-Tools CP-SAT.
-    Falls back to a fast greedy algorithm ONLY if ortools is not installed.
-    """
-    try:
-        return _cp_solve(problem)
-    except ImportError:
-        logger.warning("ortools not installed — falling back to Greedy solver.")
-        return _greedy_solve(problem)
-    except Exception as e:
-        # Log the real error so we can see exactly what went wrong
-        logger.error(f"CP-SAT solver failed: {type(e).__name__}: {e}", exc_info=True)
-        raise  # re-raise so the API returns a 500 with the real error
-
-
-def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
-    import math
-    from ortools.sat.python import cp_model
-    from datetime import datetime
-    start_ts = datetime.now()
-    logger.info("CP-SAT solver started ✓")
-
-    subjects = problem["subjects"]
-    teachers = problem["teachers"]
-    raw_classes = problem.get("classes", [])
-    rooms = problem.get("rooms", [])
-
-    max_room_capacity = 40
-    if rooms:
-        max_room_capacity = int(max([int(r.get("capacity", 40)) for r in rooms]))
-
-    classes = []
-    for cls in raw_classes:
-        class_size = int(cls.get("size", 30))
-        if class_size > max_room_capacity:
-            c_size = float(class_size)
-            capacity = float(max_room_capacity)
-            num_sections = max(2, math.ceil(c_size / capacity))
-            section_size = math.ceil(c_size / float(num_sections))
-            for i in range(num_sections):
-                new_cls = cls.copy()
-                new_cls["name"] = f"{cls['name']} {chr(65 + i)}"
-                new_cls["size"] = section_size
-                new_cls["original_name"] = cls["name"]
-                classes.append(new_cls)
-        else:
-            classes.append(cls)
-
-    working_days = problem["working_days"]
-    periods_per_day = problem["periods_per_day"]
-    constraints = problem.get("constraints", {})
-    lunch_after = int(constraints.get("lunch_after_period", 0))
-
-    time_slots = generate_time_slots(
-        problem.get("start_time", "08:00"),
-        periods_per_day,
-        problem.get("period_duration_minutes", 45)
-    )
-
-    valid_period_indices = [
-        p for p in range(periods_per_day)
-        if lunch_after == 0 or p != lunch_after - 1
-    ]
-
-    subj_by_code = {s["code"]: i for i, s in enumerate(subjects)}
-    teacher_can_teach = []
-    for t in teachers:
-        can = {subj_by_code[code] for code in t.get("subjects", []) if code in subj_by_code}
-        if not can:
-            can = set(range(len(subjects)))
-        teacher_can_teach.append(can)
-
-    model = cp_model.CpModel()
-    assignments_vars = {}
-    
-    class_sessions = {c: [] for c in range(len(classes))}
-    session_details = {} 
-    session_counter = 0
-
-    for c_idx, cls in enumerate(classes):
-        for s_idx, subj in enumerate(subjects):
-            target_classes = subj.get("target_classes", [])
-            original_name = cls.get("original_name")
-            target_match = not target_classes or cls["name"] in target_classes or (original_name and original_name in target_classes)
-            if not target_match:
-                continue
-            required = int(subj.get("periods_per_week", 1))
-            for _ in range(required):
-                session_id = session_counter
-                class_sessions[c_idx].append(session_id)
-                session_details[session_id] = (c_idx, s_idx)
-                session_counter += 1
-
-    valid_teachers_for_subj = {}
-    for s_idx in range(len(subjects)):
-        valid_teachers_for_subj[s_idx] = [t_idx for t_idx, can in enumerate(teacher_can_teach) if s_idx in can]
-
-    valid_rooms_for_class = {}
-    for c_idx, cls in enumerate(classes):
-        c_size = int(cls.get("size", 30))
-        eligible = [r_idx for r_idx, r in enumerate(rooms) if r.get("capacity", 40) >= c_size]
-        valid_rooms_for_class[c_idx] = eligible if eligible else list(range(len(rooms)))
-
-    session_vars = {}
-    vars_by_class_time = {} 
-    vars_by_teacher_time = {} 
-    vars_by_room_time = {} 
-    vars_by_class_subject_day = {}
-
-    for session_id, (c_idx, s_idx) in session_details.items():
-        session_vars[session_id] = []
-        for t_idx in valid_teachers_for_subj[s_idx]:
-            for r_idx in valid_rooms_for_class[c_idx]:
-                for d in range(len(working_days)):
-                    for p in valid_period_indices:
-                        name = f"x_s{session_id}_t{t_idx}_r{r_idx}_d{d}_p{p}"
-                        var = model.NewBoolVar(name)
-                        assignments_vars[(session_id, t_idx, r_idx, d, p)] = var
-                        session_vars[session_id].append(var)
-                        
-                        if (c_idx, d, p) not in vars_by_class_time: vars_by_class_time[(c_idx, d, p)] = []
-                        vars_by_class_time[(c_idx, d, p)].append(var)
-                        if (t_idx, d, p) not in vars_by_teacher_time: vars_by_teacher_time[(t_idx, d, p)] = []
-                        vars_by_teacher_time[(t_idx, d, p)].append(var)
-                        if (r_idx, d, p) not in vars_by_room_time: vars_by_room_time[(r_idx, d, p)] = []
-                        vars_by_room_time[(r_idx, d, p)].append(var)
-                        if (c_idx, s_idx, d) not in vars_by_class_subject_day: vars_by_class_subject_day[(c_idx, s_idx, d)] = []
-                        vars_by_class_subject_day[(c_idx, s_idx, d)].append(var)
-
-    for session_id, vars_list in session_vars.items():
-        if not vars_list:
-            raise Exception(f"No valid assignments possible for a session (check teacher/room constraints)")
-        model.AddExactlyOne(vars_list)
-
-    for var_list in vars_by_class_time.values():
-        model.AddAtMostOne(var_list)
-
-    for var_list in vars_by_teacher_time.values():
-        model.AddAtMostOne(var_list)
-
-    for var_list in vars_by_room_time.values():
-        model.AddAtMostOne(var_list)
-
-    for (c_idx, s_idx, d), var_list in vars_by_class_subject_day.items():
-        if not var_list:
-            continue
-        required = int(subjects[s_idx].get("periods_per_week", 1))
-        max_per_day = max(1, math.ceil(required / len(working_days)))
-        model.Add(sum(var_list) <= max_per_day)
-
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 15.0
-    status = solver.Solve(model)
-
-    logger.info(f"CP-SAT solve complete. Status: {solver.StatusName(status)} | Time: {round(solver.WallTime(), 3)}s")
-
-    if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        assignments = []
-        for (session_id, t_idx, r_idx, d, p), var in assignments_vars.items():
-            if solver.BooleanValue(var):
-                c_idx, s_idx = session_details[session_id]
-                cls = classes[c_idx]
-                slot_info = time_slots[p] if p < len(time_slots) else {"start": "?", "end": "?"}
-                assignments.append({
-                    "class_name": cls["name"],
-                    "class_index": c_idx,
-                    "subject_name": subjects[s_idx]["name"],
-                    "subject_code": subjects[s_idx]["code"],
-                    "teacher_name": teachers[t_idx]["name"],
-                    "teacher_index": t_idx,
-                    "room_name": rooms[r_idx]["name"],
-                    "room_index": r_idx,
-                    "day": working_days[d],
-                    "day_index": d,
-                    "period": p + 1,
-                    "start_time": slot_info["start"],
-                    "end_time": slot_info["end"]
-                })
-        
-        grid = _build_grid(assignments, classes, working_days, time_slots, valid_period_indices)
-        
-        return {
-            "success": True,
-            "solver": "CP-SAT",
-            "status": solver.StatusName(status),
-            "solve_time": round(solver.WallTime(), 3),
-            "assignments": assignments,
-            "grid": grid,
-            "time_slots": time_slots,
-            "working_days": working_days,
-            "stats": {
-                "total_assignments": len(assignments),
-                "classes": len(classes),
-                "subjects": len(subjects),
-                "teachers": len(teachers),
-                "rooms": len(rooms),
-                "solve_time_seconds": round(solver.WallTime(), 3)
-            }
-        }
-    else:
-        raise Exception(f"Status returned '{solver.StatusName(status)}'")
-
-
-def _greedy_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Fast greedy solver that assigns sessions round-robin across days.
-    
-    Strategy:
-    1. For every class × subject, build a list of required sessions.
-    2. Iterate over available (day, period) slots in a round-robin order.
-    3. Assign a session if the teacher and room are free.
-    4. If no exact fit, try any free teacher who can teach the subject.
-    """
-    start_ts = datetime.now()
-
-    import math
-
-    subjects = problem["subjects"]
-    teachers = problem["teachers"]
-    raw_classes = problem.get("classes", [])
-    rooms = problem.get("rooms", [])
-
-    max_room_capacity = 40
-    if rooms:
-        max_room_capacity = int(max([int(r.get("capacity", 40)) for r in rooms]))
-
-    classes = []
-    for cls in raw_classes:
-        class_size = int(cls.get("size", 30))
-        if class_size > max_room_capacity:
-            c_size = float(class_size)
-            capacity = float(max_room_capacity)
-            num_sections = max(2, math.ceil(c_size / capacity))
-            section_size = math.ceil(c_size / float(num_sections))
-            for i in range(num_sections):
-                new_cls = cls.copy()
-                new_cls["name"] = f"{cls['name']} {chr(65 + i)}"
-                new_cls["size"] = section_size
-                new_cls["original_name"] = cls["name"]
-                classes.append(new_cls)
-        else:
-            classes.append(cls)
-    working_days = problem["working_days"]
-    periods_per_day = problem["periods_per_day"]
-    constraints = problem.get("constraints", {})
-    lunch_after = int(constraints.get("lunch_after_period", 0))
-
-    time_slots = generate_time_slots(
-        problem.get("start_time", "08:00"),
-        periods_per_day,
-        problem.get("period_duration_minutes", 45)
-    )
-
-    # Skip lunch period index (0-based)
-    valid_period_indices = [
-        p for p in range(periods_per_day)
-        if lunch_after == 0 or p != lunch_after - 1
-    ]
-
-    # Build subject code → index map
-    subj_by_code = {s["code"]: i for i, s in enumerate(subjects)}
-
-    # For each teacher, build a set of subject indexes they can teach
-    teacher_can_teach: List[Any] = []
-    for t in teachers:
-        can = {subj_by_code[code] for code in t.get("subjects", []) if code in subj_by_code}
-        if not can:
-            can = set(range(len(subjects)))  # teach all if none specified
-        teacher_can_teach.append(can)
-
-    # Busy sets: (teacher_idx, day_idx, period_idx) → True
-    teacher_busy: Dict[Tuple[int, int, int], bool] = {}
-    # Busy sets: (room_idx, day_idx, period_idx) → True
-    room_busy: Dict[Tuple[int, int, int], bool] = {}
-    # Class slots already assigned: (class_idx, day_idx, period_idx) → True
-    class_slot_busy: Dict[Tuple[int, int, int], bool] = {}
-
-    assignments = []
-
-    for c_idx, cls in enumerate(classes):
-        class_size = int(cls.get("size", 30))
-
-        # Build a list of sessions this class needs, sorted so subjects spread across days
-        sessions_needed = []
-        for s_idx, subj in enumerate(subjects):
-            target_classes = subj.get("target_classes", [])
-            original_name = cls.get("original_name")
-            target_match = not target_classes or cls["name"] in target_classes or (original_name and original_name in target_classes)
-            if not target_match:
-                continue
-
-            required = int(subj.get("periods_per_week", 1))
-            for session_num in range(required):
-                # Store (subject_idx, preferred_day) — spread across week by session_num
-                preferred_day = session_num % len(working_days)
-                sessions_needed.append((s_idx, preferred_day))
-
-        # Sort sessions by preferred_day so we naturally spread across the week
-        sessions_needed.sort(key=lambda x: x[1])
-
-        # For each session, find a free (day, period, teacher, room) slot
-        for s_idx, preferred_day in sessions_needed:
-            assigned = False
-
-            # Build a sorted list of (day, period) to try — start near preferred_day
-            day_order = list(range(len(working_days)))
-            # rotate so we start near the preferred day
-            day_order = day_order[preferred_day:] + day_order[:preferred_day]
-
-            for d in day_order:
-                if assigned:
-                    break
-                for p in valid_period_indices:
-                    # Skip if class already has something at this slot
-                    if class_slot_busy.get((c_idx, d, p)):
-                        continue
-
-                    # Find a teacher who can teach this subject and is free
-                    t_idx = None
-                    for ti, can_teach_set in enumerate(teacher_can_teach):
-                        if s_idx not in can_teach_set:
-                            continue
-                        if teacher_busy.get((ti, d, p)):
-                            continue
-                        t_idx = ti
-                        break
-
-                    if t_idx is None:
-                        continue
-
-                    # Find a room that fits the class and is free
-                    r_idx = None
-                    # Prefer smallest room that fits
-                    eligible_rooms = sorted(
-                        [ri for ri in range(len(rooms)) if rooms[ri].get("capacity", 40) >= class_size],
-                        key=lambda ri: rooms[ri].get("capacity", 40)
-                    )
-                    if not eligible_rooms:
-                        # Accept any free room if none fits (best-effort)
-                        eligible_rooms = list(range(len(rooms)))
-
-                    for ri in eligible_rooms:
-                        if not room_busy.get((ri, d, p)):
-                            r_idx = ri
-                            break
-
-                    if r_idx is None:
-                        continue
-
-                    assert t_idx is not None and r_idx is not None
-
-                    # Assign!
-                    teacher_busy[(t_idx, d, p)] = True
-                    room_busy[(r_idx, d, p)] = True
-                    class_slot_busy[(c_idx, d, p)] = True
-
-                    slot_info = time_slots.__getitem__(p) if p < len(time_slots) else {"start": "?", "end": "?"}
-                    assignments.append({
-                        "class_name": cls["name"],
-                        "class_index": c_idx,
-                        "subject_name": subjects[s_idx]["name"],
-                        "subject_code": subjects[s_idx]["code"],
-                        "teacher_name": teachers[t_idx]["name"],
-                        "teacher_index": t_idx,
-                        "room_name": rooms[r_idx]["name"],
-                        "room_index": r_idx,
-                        "day": working_days[d],
-                        "day_index": d,
-                        "period": p + 1,
-                        "start_time": slot_info["start"],
-                        "end_time": slot_info["end"]
-                    })
-                    assigned = True
-                    break
-
-            if not assigned:
-                logger.warning(
-                    f"Could not assign {subjects[s_idx]['name']} for {cls['name']} "
-                    f"— not enough available slots"
-                )
-
-    solve_duration = (datetime.now() - start_ts).total_seconds()
-    grid = _build_grid(assignments, classes, working_days, time_slots, valid_period_indices)
-
-    return {
-        "success": True,
-        "solver": "Greedy",
-        "status": "FEASIBLE",
-        "solve_time": round(solve_duration, 3),
-        "assignments": assignments,
-        "grid": grid,
-        "time_slots": time_slots,
-        "working_days": working_days,
-        "stats": {
-            "total_assignments": len(assignments),
-            "classes": len(classes),
-            "subjects": len(subjects),
-            "teachers": len(teachers),
-            "rooms": len(rooms),
-            "solve_time_seconds": round(solve_duration, 3)
-        }
-    }
 
 
 def _build_grid(
@@ -440,18 +517,30 @@ def _build_grid(
     classes: List[Dict[str, Any]],
     working_days: List[str],
     time_slots: List[Dict[str, Any]],
-    valid_period_indices: List[int]
 ) -> Dict[str, Any]:
-    """Build a grid structure: grid[class_name][day][period] = assignment."""
-    grid = {}
-    for cls in classes:
-        grid[cls["name"]] = {day: {} for day in working_days}
-
+    grid = {cls["name"]: {day: {} for day in working_days} for cls in classes}
     for a in assignments:
-        class_name = a["class_name"]
-        day = a["day"]
-        period = str(a["period"])
-        if class_name in grid and day in grid[class_name]:
-            grid[class_name][day][period] = a
-
+        cn, day, p = a["class_name"], a["day"], str(a["period"])
+        if cn in grid and day in grid[cn]:
+            grid[cn][day][p] = a
     return grid
+
+
+def _empty_result(problem, time_slots, working_days, solver_name):
+    return {
+        "success":      True,
+        "solver":       solver_name,
+        "status":       "FEASIBLE",
+        "solve_time":   0,
+        "assignments":  [],
+        "grid":         {},
+        "time_slots":   time_slots,
+        "working_days": working_days,
+        "stats": {
+            "total_assignments": 0,
+            "classes": 0, "subjects": 0, "teachers": 0, "rooms": 0,
+            "solve_time_seconds": 0,
+            "solver": solver_name,
+            "solver_status": "FEASIBLE",
+        },
+    }

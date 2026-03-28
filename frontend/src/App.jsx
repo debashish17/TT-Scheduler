@@ -2,19 +2,22 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
-// Onboarding Screens (simplified flow)
-import WelcomeScreen from './components/onboarding/WelcomeScreen';          // Step 1: Institution + Teachers
-import BatchSetup from './components/onboarding/BatchSetup';                // Step 2: Batches
-import DepartmentSetup from './components/onboarding/DepartmentSetup';      // Step 3: Subjects
-import TimeStructure from './components/onboarding/TimeStructure';          // Step 3: Schedule (days + periods)
-import ClassroomSetup from './components/onboarding/ClassroomSetup';        // Step 4: Rooms
-import Constraints from './components/onboarding/Constraints';              // Step 5: Rules
-import SetupSummary from './components/onboarding/SetupSummary';            // Step 6: Review + Generate
+// Onboarding Screens
+import WelcomeScreen from './components/onboarding/WelcomeScreen';        // Step 1: Institution + Teachers
+import BatchSetup from './components/onboarding/BatchSetup';              // Step 2: Batches
+import DepartmentSetup from './components/onboarding/DepartmentSetup';    // Step 3: Subjects
+import TimeStructure from './components/onboarding/TimeStructure';        // Step 4: Schedule
+import ClassroomSetup from './components/onboarding/ClassroomSetup';      // Step 5: Rooms
+import Constraints from './components/onboarding/Constraints';            // Step 6: Rules
+import SetupSummary from './components/onboarding/SetupSummary';          // Step 7: Review + Generate
+import WorkflowConfig from './components/onboarding/WorkflowConfig';      // Workflow chooser (optional)
+import SetupComplete from './components/onboarding/SetupComplete';        // Setup complete confirmation
 
 // Timetable View Screens
-import TimetableGrid from './components/timetable/TimetableGrid';           // Master grid
-import FacultyView from './components/timetable/FacultyView';               // By teacher
-import StudentView from './components/timetable/StudentView';               // By class
+import TimetableGrid from './components/timetable/TimetableGrid';         // Master grid (class view)
+import FacultyView from './components/timetable/FacultyView';             // By teacher
+import StudentView from './components/timetable/StudentView';             // By class/student
+import AnalyticsView from './components/timetable/AnalyticsView';         // Real analytics dashboard
 
 function App() {
   return (
@@ -26,20 +29,25 @@ function App() {
             <Route path="/" element={<Navigate to="/screen-1" replace />} />
 
             {/* === ONBOARDING FLOW === */}
-            <Route path="/screen-1" element={<WelcomeScreen />} />       {/* Institution + Teachers */}
-            <Route path="/screen-2" element={<BatchSetup />} />          {/* Batches */}
-            <Route path="/screen-3" element={<DepartmentSetup />} />     {/* Subjects */}
-            <Route path="/screen-4" element={<TimeStructure />} />       {/* Schedule */}
-            <Route path="/screen-5" element={<ClassroomSetup />} />      {/* Rooms */}
-            <Route path="/screen-6" element={<Constraints />} />         {/* Rules */}
-            <Route path="/screen-7" element={<SetupSummary />} />        {/* Review + Generate */}
+            <Route path="/screen-1" element={<WelcomeScreen />} />     {/* Institution + Teachers */}
+            <Route path="/screen-2" element={<BatchSetup />} />        {/* Batches */}
+            <Route path="/screen-3" element={<DepartmentSetup />} />   {/* Subjects */}
+            <Route path="/screen-4" element={<TimeStructure />} />     {/* Schedule */}
+            <Route path="/screen-5" element={<ClassroomSetup />} />    {/* Rooms */}
+            <Route path="/screen-6" element={<Constraints />} />       {/* Rules */}
+            <Route path="/screen-7" element={<SetupSummary />} />      {/* Review + Generate */}
+
+            {/* === ADDITIONAL ONBOARDING SCREENS === */}
+            <Route path="/workflow" element={<WorkflowConfig />} />
+            <Route path="/setup-complete" element={<SetupComplete />} />
 
             {/* === TIMETABLE VIEWS === */}
             <Route path="/timetable" element={<TimetableGrid />} />
             <Route path="/faculty-view" element={<FacultyView />} />
             <Route path="/student-view" element={<StudentView />} />
+            <Route path="/analytics" element={<AnalyticsView />} />
 
-            {/* Fallback: redirect old screen numbers or unknown paths */}
+            {/* Fallback redirects for old screen numbers */}
             <Route path="/screen-8" element={<Navigate to="/screen-7" replace />} />
             <Route path="/screen-9" element={<Navigate to="/screen-7" replace />} />
             <Route path="/screen-10" element={<Navigate to="/timetable" replace />} />
