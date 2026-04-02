@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaPlay, FaArrowLeft, FaSchool, FaBook, FaClock, FaDoorOpen, FaClipboardList, FaUsers, FaTrash } from 'react-icons/fa';
+import { FaPlay, FaArrowLeft, FaSchool, FaBook, FaClock, FaDoorOpen, FaClipboardList, FaUsers, FaTrash, FaExclamationTriangle, FaCheckCircle } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 import { simpleTimetableAPI } from '../../api/client';
 
@@ -14,6 +14,7 @@ const SetupSummary = () => {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState(null);
+  const [solverWarnings, setSolverWarnings] = useState([]);
 
   // ── Hard Reset ──────────────────────────────────────────────
   const handleReset = () => {
@@ -167,6 +168,9 @@ const SetupSummary = () => {
       const timetableData = response.data;
       setGeneratedTimetable(timetableData);
 
+      const warnings = timetableData.warnings || [];
+      setSolverWarnings(warnings);
+
       // Auto-save to DB (non-blocking — failure shows warning, doesn't block navigation)
       try {
         const savePayload = {
@@ -183,21 +187,29 @@ const SetupSummary = () => {
         const saveResult = await simpleTimetableAPI.saveTimetable(savePayload);
         console.log('Timetable saved to DB:', saveResult.data);
       } catch (saveErr) {
-        // Don't block the user — just log the warning
         console.warn('DB save warning (timetable still visible):', saveErr.message);
       }
 
-      navigate('/timetable');
+      // Navigate immediately only if no warnings — otherwise show them first
+      if (warnings.length === 0) {
+        navigate('/timetable');
+      }
 
     } catch (err) {
-      let detail = err.response?.data?.detail;
       let msg;
-      if (Array.isArray(detail)) {
-        msg = detail.map(d => `${d.loc?.slice(-1)[0] || 'field'}: ${d.msg}`).join('; ');
-      } else if (detail && typeof detail === 'object') {
-        msg = JSON.stringify(detail);
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        msg = 'The solver is taking too long to respond. Try reducing periods_per_week or adding more rooms/teachers, then try again.';
+      } else if (!err.response) {
+        msg = 'Cannot reach the backend. Make sure the server is running on http://localhost:8000.';
       } else {
-        msg = detail || err.message || 'Generation failed';
+        let detail = err.response?.data?.detail;
+        if (Array.isArray(detail)) {
+          msg = detail.map(d => `${d.loc?.slice(-1)[0] || 'field'}: ${d.msg}`).join('; ');
+        } else if (detail && typeof detail === 'object') {
+          msg = JSON.stringify(detail);
+        } else {
+          msg = detail || err.message || 'Generation failed';
+        }
       }
       setError(msg);
       setTimetableError(msg);
@@ -255,6 +267,37 @@ const SetupSummary = () => {
           </div>
         )}
 
+        {/* Solver warnings from backend */}
+        {solverWarnings.length > 0 && (
+          <div className="mb-6 space-y-2">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">
+              Timetable generated with {solverWarnings.length} issue{solverWarnings.length > 1 ? 's' : ''}:
+            </h3>
+            {solverWarnings.map((w, i) => (
+              <div key={i} className={`flex gap-3 items-start rounded-xl px-4 py-3 border text-sm ${
+                w.level === 'error'
+                  ? 'bg-red-50 border-red-200 text-red-800'
+                  : 'bg-yellow-50 border-yellow-200 text-yellow-800'
+              }`}>
+                <FaExclamationTriangle className={`mt-0.5 shrink-0 ${w.level === 'error' ? 'text-red-500' : 'text-yellow-500'}`} />
+                <div className="min-w-0">
+                  <p className="font-medium">{w.message}</p>
+                  {w.detail && (
+                    <p className="text-xs opacity-75 mt-0.5 font-mono">
+                      {Object.entries(w.detail).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' · ')}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+            <button
+              onClick={() => navigate('/timetable')}
+              className="mt-3 w-full flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition-colors">
+              <FaCheckCircle /> View Timetable Anyway
+            </button>
+          </div>
+        )}
+
         {/* Teacher auto-note */}
         {(!teachersData || teachersData.length === 0) && (
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-sm">
@@ -283,7 +326,7 @@ const SetupSummary = () => {
             ) : '🎯 Generate Timetable with CP-SAT'}
           </button>
           {isGenerating && (
-            <p className="text-sm text-gray-500 mt-3">CP-SAT solver is working. This may take up to 30 seconds.</p>
+            <p className="text-sm text-gray-500 mt-3">CP-SAT solver is working. This may take up to 60 seconds.</p>
           )}
         </div>
 

@@ -11,7 +11,7 @@ const API_VERSION = '/api/v1';
 // Create axios instance
 const apiClient = axios.create({
   baseURL: `${API_BASE_URL}${API_VERSION}`,
-  timeout: 30000, // 30 seconds
+  timeout: 90000, // 90 seconds (CP-SAT solver can take up to 60s)
   headers: {
     'Content-Type': 'application/json',
   },
@@ -291,7 +291,7 @@ export { apiClient };
 
 // Simple timetable generation (no DB setup needed)
 export const simpleTimetableAPI = {
-  generate: (data) => apiClient.post('/timetable/generate-simple', data),
+  generate: (data) => apiClient.post('/timetable/generate-simple', data, { timeout: 90000 }),
 
   // Compute analytics from solver result (real data, no DB)
   getAnalytics: (resultData) => apiClient.post('/timetable/analytics', resultData),

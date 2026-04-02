@@ -41,17 +41,153 @@ def solve_timetable(problem: Dict[str, Any]) -> Dict[str, Any]:
     """
     Solve the school timetable.
     Tries CP-SAT first (optimal), falls back to greedy on failure.
+    Always includes a `warnings` list in the result for the frontend.
     """
     problem = _preprocess(problem)
+    warnings = _diagnose_problem(problem)
     try:
-        return _cp_solve(problem)
+        result = _cp_solve(problem)
     except ImportError:
         logger.warning("ortools not installed — using Greedy solver.")
-        return _greedy_solve(problem)
+        result = _greedy_solve(problem)
     except Exception as e:
         logger.error(f"CP-SAT failed: {e}", exc_info=True)
         logger.warning("CP-SAT failed — falling back to Greedy solver.")
-        return _greedy_solve(problem)
+        result = _greedy_solve(problem)
+
+    # Merge pre-solve warnings with any placement warnings from greedy
+    existing = result.get("warnings", [])
+    result["warnings"] = warnings + existing
+    return result
+
+
+# ──────────────────────────────────────────────────────────────
+# Diagnostics — run before solving to surface actionable issues
+# ──────────────────────────────────────────────────────────────
+
+def _diagnose_problem(problem: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Analyse the problem and return a list of warnings the frontend can display.
+    Each warning has: { level: "error"|"warning"|"info", code: str, message: str, detail: dict }
+    """
+    issues: List[Dict[str, Any]] = []
+
+    subjects     = problem.get("subjects", [])
+    teachers     = problem.get("teachers", [])
+    classes      = problem.get("classes", [])
+    rooms        = problem.get("rooms", [])
+    working_days = problem.get("working_days", [])
+    ppd          = int(problem.get("periods_per_day", 7))
+    constraints  = problem.get("constraints", {}) or {}
+    lunch_after  = int(constraints.get("lunch_after_period", 0))
+
+    usable_ppd   = ppd - (1 if lunch_after > 0 else 0)
+    slots_pw     = len(working_days) * usable_ppd  # slots per class per week
+
+    subj_codes   = {s["code"] for s in subjects}
+
+    # 1. Subjects with NO qualified teacher
+    for subj in subjects:
+        qualified = [
+            t["name"] for t in teachers
+            if subj["code"] in t.get("subjects", []) or not t.get("subjects")
+        ]
+        if not qualified:
+            issues.append({
+                "level":   "error",
+                "code":    "NO_TEACHER_FOR_SUBJECT",
+                "message": f"No teacher can teach '{subj['name']}' ({subj['code']}). Assign at least one teacher.",
+                "detail":  {"subject": subj["code"]},
+            })
+
+    # 2. Teachers with unknown subject codes
+    for teacher in teachers:
+        bad = [c for c in teacher.get("subjects", []) if c not in subj_codes]
+        if bad:
+            issues.append({
+                "level":   "warning",
+                "code":    "UNKNOWN_SUBJECT_CODE",
+                "message": f"Teacher '{teacher['name']}' has subject code(s) {bad} that don't match any subject. "
+                           f"Check the subject code spelling.",
+                "detail":  {"teacher": teacher["name"], "unknown_codes": bad},
+            })
+
+    # 3. Over-subscribed schedule (total sessions > total available slots)
+    total_sessions_needed = sum(
+        int(s.get("periods_per_week", 3)) for s in subjects
+    ) * len(classes)
+    total_slots = slots_pw * len(classes)
+    if total_sessions_needed > total_slots:
+        issues.append({
+            "level":   "error",
+            "code":    "SCHEDULE_OVERSUBSCRIBED",
+            "message": f"Schedule is over-subscribed: {total_sessions_needed} sessions needed "
+                       f"but only {total_slots} slots available "
+                       f"({len(working_days)} days × {usable_ppd} usable periods × {len(classes)} classes). "
+                       f"Reduce periods_per_week or add more working days/periods.",
+            "detail":  {
+                "sessions_needed": total_sessions_needed,
+                "slots_available": total_slots,
+                "shortfall":       total_sessions_needed - total_slots,
+            },
+        })
+
+    # 4. Per-subject teacher capacity check
+    #    A teacher can cover at most slots_pw sessions per week.
+    #    If one subject needs N_classes × ppw sessions but teacher capacity < that, warn.
+    for subj in subjects:
+        ppw = int(subj.get("periods_per_week", 3))
+        tc = subj.get("target_classes", [])
+        affected_classes = [c for c in classes if not tc or c["name"] in tc]
+        sessions_for_subj = ppw * len(affected_classes)
+        qualified_teachers = [
+            t for t in teachers
+            if subj["code"] in t.get("subjects", []) or not t.get("subjects")
+        ]
+        teacher_capacity = len(qualified_teachers) * slots_pw
+        if qualified_teachers and sessions_for_subj > teacher_capacity:
+            issues.append({
+                "level":   "error",
+                "code":    "TEACHER_CAPACITY_EXCEEDED",
+                "message": f"'{subj['name']}' needs {sessions_for_subj} sessions/week "
+                           f"but qualified teacher(s) can only cover {teacher_capacity} slots. "
+                           f"Add more teachers for this subject or reduce periods_per_week.",
+                "detail":  {
+                    "subject":            subj["code"],
+                    "sessions_needed":    sessions_for_subj,
+                    "teacher_capacity":   teacher_capacity,
+                    "qualified_teachers": [t["name"] for t in qualified_teachers],
+                },
+            })
+
+    # 5. Room capacity check
+    for cls in classes:
+        size = int(cls.get("size", 30))
+        eligible = [r for r in rooms if int(r.get("capacity", 40)) >= size]
+        if not eligible:
+            max_cap = max((int(r.get("capacity", 40)) for r in rooms), default=0)
+            issues.append({
+                "level":   "error",
+                "code":    "NO_ROOM_FOR_CLASS",
+                "message": f"Class '{cls['name']}' has {size} students but no room is large enough "
+                           f"(largest room holds {max_cap}). Add a larger room or reduce class size.",
+                "detail":  {"class": cls["name"], "class_size": size, "max_room_capacity": max_cap},
+            })
+
+    # 6. Not enough rooms to run all classes simultaneously
+    if len(rooms) < len(classes):
+        issues.append({
+            "level":   "warning",
+            "code":    "FEWER_ROOMS_THAN_CLASSES",
+            "message": f"There are {len(classes)} classes but only {len(rooms)} rooms. "
+                       f"Not all classes can be scheduled in the same period simultaneously.",
+            "detail":  {"classes": len(classes), "rooms": len(rooms)},
+        })
+
+    for w in issues:
+        logger.warning(f"[Diagnose] [{w['level'].upper()}] {w['message']}")
+
+    return issues
 
 
 # ──────────────────────────────────────────────────────────────
@@ -296,7 +432,7 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
 
     # ── Solve ──────────────────────────────────────────────
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 30.0
+    solver.parameters.max_time_in_seconds = 60.0
     solver.parameters.num_search_workers = 4   # parallel search
     solver.parameters.log_search_progress = False
 
@@ -339,8 +475,10 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
             "grid":         grid,
             "time_slots":   time_slots,
             "working_days": working_days,
+            "warnings":     [],
             "stats": {
                 "total_assignments":  len(assignments),
+                "unplaced_sessions":  0,
                 "classes":            len(classes),
                 "subjects":           len(subjects),
                 "teachers":           len(teachers),
@@ -395,6 +533,7 @@ def _greedy_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
     room_busy:      Dict[Tuple, bool] = {}
     class_slot_busy: Dict[Tuple, bool] = {}
     assignments = []
+    placement_warnings: List[Dict[str, Any]] = []
 
     D = len(working_days)
     for ci, cls in enumerate(classes):
@@ -462,9 +601,61 @@ def _greedy_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
                     break
 
             if not assigned:
-                logger.warning(
-                    f"Greedy: could not place {subjects[si]['name']} for {cls['name']}"
+                # Diagnose why placement failed
+                free_class_slots = [
+                    (d, p) for d in range(D) for p in valid_periods
+                    if not class_slot_busy.get((ci, d, p))
+                ]
+                if not free_class_slots:
+                    reason = "Class has no free slots remaining in the week"
+                    fix    = f"Reduce total periods_per_week across all subjects for '{cls['name']}'"
+                else:
+                    teacher_blocked = all(
+                        teacher_busy.get((ti2, d, p))
+                        for (d, p) in free_class_slots
+                        for ti2, can in enumerate(teacher_can) if si in can
+                    )
+                    qualified_teachers = [t for t, can in enumerate(teacher_can) if si in can]
+                    if not qualified_teachers:
+                        reason = f"No teacher is qualified to teach '{subjects[si]['name']}'"
+                        fix    = f"Assign at least one teacher to '{subjects[si]['code']}'"
+                    elif teacher_blocked or all(
+                        teacher_busy.get((ti2, d, p))
+                        for (d, p) in free_class_slots
+                        for ti2 in qualified_teachers
+                    ):
+                        reason = (
+                            f"All {len(qualified_teachers)} teacher(s) for "
+                            f"'{subjects[si]['name']}' are busy in every slot where "
+                            f"'{cls['name']}' is free"
+                        )
+                        fix = (
+                            f"Add another teacher for '{subjects[si]['name']}' "
+                            f"or reduce their other subject loads"
+                        )
+                    else:
+                        reason = (
+                            f"No suitable room available in slots where both "
+                            f"'{cls['name']}' and a teacher are free"
+                        )
+                        fix = "Add more rooms or increase existing room capacities"
+
+                msg = (
+                    f"Could not schedule '{subjects[si]['name']}' for '{cls['name']}': "
+                    f"{reason}. Fix: {fix}"
                 )
+                logger.warning(f"Greedy: {msg}")
+                placement_warnings.append({
+                    "level":   "warning",
+                    "code":    "UNPLACED_SESSION",
+                    "message": msg,
+                    "detail": {
+                        "class":   cls["name"],
+                        "subject": subjects[si]["code"],
+                        "reason":  reason,
+                        "fix":     fix,
+                    },
+                })
 
     elapsed = round((datetime.now() - t0).total_seconds(), 3)
     grid = _build_grid(assignments, classes, working_days, time_slots)
@@ -477,15 +668,17 @@ def _greedy_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
         "grid":         grid,
         "time_slots":   time_slots,
         "working_days": working_days,
+        "warnings":     placement_warnings,
         "stats": {
-            "total_assignments":  len(assignments),
-            "classes":            len(classes),
-            "subjects":           len(subjects),
-            "teachers":           len(teachers),
-            "rooms":              len(rooms),
-            "solve_time_seconds": elapsed,
-            "solver":             "Greedy",
-            "solver_status":      "FEASIBLE",
+            "total_assignments":   len(assignments),
+            "unplaced_sessions":   len(placement_warnings),
+            "classes":             len(classes),
+            "subjects":            len(subjects),
+            "teachers":            len(teachers),
+            "rooms":               len(rooms),
+            "solve_time_seconds":  elapsed,
+            "solver":              "Greedy",
+            "solver_status":       "FEASIBLE",
         },
     }
 
@@ -536,8 +729,10 @@ def _empty_result(problem, time_slots, working_days, solver_name):
         "grid":         {},
         "time_slots":   time_slots,
         "working_days": working_days,
+        "warnings":     [],
         "stats": {
-            "total_assignments": 0,
+            "total_assignments":  0,
+            "unplaced_sessions":  0,
             "classes": 0, "subjects": 0, "teachers": 0, "rooms": 0,
             "solve_time_seconds": 0,
             "solver": solver_name,

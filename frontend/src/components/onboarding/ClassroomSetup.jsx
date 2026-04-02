@@ -28,9 +28,16 @@ const ClassroomSetup = () => {
   const navigate = useNavigate();
   const { roomsData, setRoomsData } = useOnboardingStore();
 
+  const DEFAULT_ROOMS = [
+    { name: 'Room 101', capacity: 40, type: 'Classroom' },
+    { name: 'Room 102', capacity: 40, type: 'Classroom' },
+    { name: 'Room 103', capacity: 30, type: 'Classroom' },
+    { name: 'Room 104', capacity: 35, type: 'Classroom' },
+  ];
+
   // Always parse capacity to int (Zustand persist can store them as strings)
   const [rooms, setRooms] = useState(
-    (roomsData?.length > 0 ? roomsData : []).map(r => ({ ...r, capacity: parseInt(r.capacity) || 0 }))
+    (roomsData?.length > 0 ? roomsData : DEFAULT_ROOMS).map(r => ({ ...r, capacity: parseInt(r.capacity) || 0 }))
   );
   const [newRoom, setNewRoom] = useState({ name: '', capacity: '', type: 'Classroom' });
 

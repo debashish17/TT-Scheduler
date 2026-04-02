@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import Header from './components/common/Header';
 import { Toaster } from 'react-hot-toast';
 
 // Onboarding Screens
@@ -22,8 +23,9 @@ import AnalyticsView from './components/timetable/AnalyticsView';         // Rea
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-gradient-to-br from-slate-100 to-blue-50 py-8">
-        <div className="container mx-auto px-4">
+      <div className="min-h-screen bg-gradient-to-br from-slate-100 to-blue-50">
+        <Header />
+        <div className="container mx-auto px-4 py-8">
           <Routes>
             {/* Redirect root to screen 1 */}
             <Route path="/" element={<Navigate to="/screen-1" replace />} />

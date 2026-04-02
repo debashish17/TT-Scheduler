@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaCalendarAlt, FaUserTie, FaGraduationCap, FaArrowLeft, FaFileExcel, FaPrint, FaChartBar, FaRedo } from 'react-icons/fa';
+import { FaCalendarAlt, FaUserTie, FaGraduationCap, FaExclamationTriangle, FaFileExcel, FaPrint, FaChartBar, FaRedo } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 import { simpleTimetableAPI } from '../../api/client';
 import toast from 'react-hot-toast';
@@ -36,7 +36,10 @@ const TimetableGrid = () => {
     );
   }
 
-  const { assignments = [], working_days = [], time_slots = [], stats = {} } = generatedTimetable;
+  const { assignments = [], working_days = [], time_slots = [], stats = {}, warnings = [] } = generatedTimetable;
+
+  const errors   = warnings.filter(w => w.level === 'error');
+  const cautions = warnings.filter(w => w.level === 'warning');
 
   const classes = [...new Set(assignments.map(a => a.class_name))].sort();
   const currentClass = selectedClass || classes[0] || '';
@@ -131,6 +134,38 @@ const TimetableGrid = () => {
           </div>
         </div>
       </div>
+
+      {/* Warnings Panel */}
+      {warnings.length > 0 && (
+        <div className="space-y-2 mb-4 print:hidden">
+          {errors.map((w, i) => (
+            <div key={i} className="flex gap-3 items-start bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+              <FaExclamationTriangle className="text-red-500 mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-red-800">{w.message}</p>
+                {w.detail && (
+                  <p className="text-xs text-red-600 mt-0.5 font-mono">
+                    {Object.entries(w.detail).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' · ')}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+          {cautions.map((w, i) => (
+            <div key={i} className="flex gap-3 items-start bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
+              <FaExclamationTriangle className="text-yellow-500 mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-yellow-800">{w.message}</p>
+                {w.detail && (
+                  <p className="text-xs text-yellow-600 mt-0.5 font-mono">
+                    {Object.entries(w.detail).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' · ')}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Class Selector */}
       {classes.length > 1 && (

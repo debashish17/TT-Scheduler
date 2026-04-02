@@ -474,34 +474,65 @@ async def save_timetable_to_db(body: SaveTimetableRequest):
 
         db = SessionLocal()
         try:
+            import json as _json
             timetable_id = str(uuid.uuid4())
             now = dt.utcnow().isoformat()
+
+            # ── Upsert institution (simple flow has no pre-existing institution) ──
+            inst_name = body.institution_name or "My School"
+            # Derive a stable code: uppercase slug, max 20 chars
+            inst_code = "".join(c for c in inst_name.upper() if c.isalnum())[:20] or "SCHOOL"
+            inst_row = db.execute(
+                text("SELECT id FROM institutions WHERE code = :code LIMIT 1"),
+                {"code": inst_code}
+            ).fetchone()
+            if inst_row:
+                institution_id = str(inst_row[0])
+            else:
+                institution_id = str(uuid.uuid4())
+                db.execute(
+                    text("""
+                        INSERT INTO institutions (id, code, name, type, created_at, updated_at)
+                        VALUES (:id, :code, :name, 'school', :created_at, :updated_at)
+                        ON CONFLICT (code) DO NOTHING
+                    """),
+                    {"id": institution_id, "code": inst_code, "name": inst_name,
+                     "created_at": now, "updated_at": now}
+                )
+                # Re-fetch in case ON CONFLICT hit a race
+                inst_row = db.execute(
+                    text("SELECT id FROM institutions WHERE code = :code LIMIT 1"),
+                    {"code": inst_code}
+                ).fetchone()
+                if inst_row:
+                    institution_id = str(inst_row[0])
 
             # ── Insert into timetables ──────────────────────────
             db.execute(
                 text("""
                     INSERT INTO timetables (
-                        id, institution_id, name, status,
+                        id, institution_id, name, semester, status,
                         generation_params, metrics, created_at, updated_at
                     ) VALUES (
-                        :id, NULL, :name, :status,
-                        :params::jsonb, :metrics::jsonb, :created_at, :updated_at
+                        :id, :institution_id, :name, :semester, 'active',
+                        CAST(:params AS jsonb), CAST(:metrics AS jsonb), :created_at, :updated_at
                     )
                 """),
                 {
-                    "id":         timetable_id,
-                    "name":       body.name or f"{body.institution_name} Timetable",
-                    "status":     "published",
-                    "params":     __import__("json").dumps({
-                        "institution_name": body.institution_name,
+                    "id":             timetable_id,
+                    "institution_id": institution_id,
+                    "name":           body.name or f"{inst_name} Timetable",
+                    "semester":       "General",
+                    "params":         _json.dumps({
+                        "institution_name": inst_name,
                         "working_days":     body.working_days,
                         "periods_per_day":  body.periods_per_day,
                         "solver":           body.solver,
                         "solver_status":    body.status,
                     }),
-                    "metrics":    __import__("json").dumps(body.stats),
-                    "created_at": now,
-                    "updated_at": now,
+                    "metrics":        _json.dumps(body.stats),
+                    "created_at":     now,
+                    "updated_at":     now,
                 }
             )
 
@@ -516,7 +547,7 @@ async def save_timetable_to_db(body: SaveTimetableRequest):
                             period_number, entry_type, metadata, created_at, updated_at
                         ) VALUES (
                             :id, :timetable_id, :day, :start_time, :end_time,
-                            :period, 'regular', :metadata::jsonb, :created_at, :updated_at
+                            :period, 'regular', CAST(:metadata AS jsonb), :created_at, :updated_at
                         )
                     """),
                     {
@@ -526,7 +557,7 @@ async def save_timetable_to_db(body: SaveTimetableRequest):
                         "start_time":   a.get("start_time", ""),
                         "end_time":     a.get("end_time", ""),
                         "period":       a.get("period", 1),
-                        "metadata":     __import__("json").dumps({
+                        "metadata":     _json.dumps({
                             "class_name":   a.get("class_name"),
                             "subject_name": a.get("subject_name"),
                             "subject_code": a.get("subject_code"),
