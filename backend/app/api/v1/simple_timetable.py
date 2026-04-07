@@ -3,12 +3,14 @@ Simple timetable generation API.
 Single endpoint that accepts all problem data and returns a complete timetable.
 No pre-existing database records required.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Dict, List, Any, Optional
 import logging
 
 from app.core.simple_solver import solve_timetable
+from app.models import User
+from app.api.deps import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,7 +59,10 @@ class SimpleTimetableRequest(BaseModel):
 
 @router.post("/generate-simple")
 @router.post("/generate")
-async def generate_simple_timetable(request: SimpleTimetableRequest):
+async def generate_simple_timetable(
+    request: SimpleTimetableRequest,
+    current_user: User = Depends(get_current_user)
+):
     """
     Generate a school timetable from self-contained request data.
     The CP-SAT solver ensures no conflicts and spreads subjects across the week.

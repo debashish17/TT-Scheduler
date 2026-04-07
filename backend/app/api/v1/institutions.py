@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
 
+from app.api.deps import get_current_user
+from app.models.user import User
 from app.db.session import get_db
 from app.schemas.institution import (
     InstitutionCreate, InstitutionUpdate, InstitutionResponse,
@@ -147,6 +149,7 @@ def get_institution_by_code(
 @router.post("/", response_model=InstitutionResponse, status_code=status.HTTP_201_CREATED)
 def create_institution(
     institution_in: InstitutionCreate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -169,6 +172,11 @@ def create_institution(
 
     # Create the institution
     institution = institution_service.create(db, institution_in)
+
+    # Link the newly created institution to the user
+    if current_user.institution_id is None:
+        current_user.institution_id = institution.id
+        db.commit()
 
     return InstitutionResponse(
         id=institution.id,

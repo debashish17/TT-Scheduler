@@ -11,6 +11,8 @@ import io
 import json
 
 from app.db.session import get_db
+from app.api.deps import get_current_user
+from app.models.user import User
 from app.schemas.timetable import (
     TimetableGenerationRequest, TimetableResponse, TimetableComparisonRequest,
     TimetableComparison, TimetableExportRequest, TimetableAnalytics,
@@ -19,13 +21,14 @@ from app.schemas.timetable import (
 from app.services.timetable_service import timetable_service
 from app.models import Timetable
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.post("/generate", response_model=TimetableResponse, status_code=status.HTTP_201_CREATED)
 async def generate_timetable(
     request: TimetableGenerationRequest,
     background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -73,7 +76,18 @@ async def generate_timetable(
                 detail="Semester is required for timetable generation"
             )
 
+        # Lazy Sync: Associate institution with the super admin if this is their first timetable
+        if current_user.institution_id is None:
+            current_user.institution_id = request.institution_id
+            db.commit()
+        elif current_user.institution_id != request.institution_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to generate timetables for this institution."
+            )
+
         # Generate timetable
+        # In a real app we might pass current_user.id as creator
         result = timetable_service.generate_timetable(db, request)
 
         return result

@@ -1,12 +1,13 @@
 """
 Classrooms API routes.
 """
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 from uuid import UUID
 
 from app.db.session import get_db
-from app.models import Classroom
+from app.models import Classroom, User
+from app.api.deps import get_current_user
 
 router = APIRouter()
 
@@ -16,13 +17,15 @@ def list_rooms(
     institution_id: UUID = None,
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """List classrooms."""
     query = db.query(Classroom).filter(Classroom.deleted_at.is_(None))
     
-    if institution_id:
-        query = query.filter(Classroom.institution_id == institution_id)
+    target_institution = current_user.institution_id or institution_id
+    if target_institution:
+        query = query.filter(Classroom.institution_id == target_institution)
     
     rooms = query.offset(skip).limit(limit).all()
     
@@ -31,18 +34,26 @@ def list_rooms(
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 def create_room(
-    institution_id: UUID,
     room_number: str,
     capacity: int,
     building: str = None,
     room_type: str = "lecture_hall",
-    db: Session = Depends(get_db)
+    institution_id: UUID = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Create a new classroom."""
     from app.models.room import RoomType
     
+    target_institution = current_user.institution_id or institution_id
+    if not target_institution:
+         raise HTTPException(
+             status_code=400, 
+             detail="No institution associated with current user, and no institution_id provided."
+         )
+         
     room = Classroom(
-        institution_id=institution_id,
+        institution_id=target_institution,
         room_number=room_number,
         building=building,
         capacity=capacity,
