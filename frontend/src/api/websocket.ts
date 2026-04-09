@@ -4,7 +4,13 @@
  */
 
 class WebSocketClient {
-  constructor(baseUrl) {
+  baseUrl: string;
+  connections: Map<string, WebSocket>;
+  reconnectAttempts: Map<string, number>;
+  maxReconnectAttempts: number;
+  reconnectDelay: number;
+
+  constructor(baseUrl?: string) {
     this.baseUrl = baseUrl || 'ws://localhost:8000';
     this.connections = new Map();
     this.reconnectAttempts = new Map();
@@ -18,7 +24,7 @@ class WebSocketClient {
    * @param {Object} callbacks - Event callbacks
    * @returns {WebSocket} WebSocket instance
    */
-  connectToJob(jobId, callbacks = {}) {
+  connectToJob(jobId: string, callbacks: any = {}) {
     const wsUrl = `${this.baseUrl}/ws/jobs/${jobId}`;
 
     // Close existing connection if any
@@ -132,7 +138,7 @@ class WebSocketClient {
    * Disconnect from job WebSocket
    * @param {string} jobId - Job ID
    */
-  disconnect(jobId) {
+  disconnect(jobId: string) {
     const ws = this.connections.get(jobId);
     if (ws) {
       ws.close(1000, 'Client disconnect');

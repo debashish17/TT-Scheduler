@@ -13,7 +13,7 @@ import toast from 'react-hot-toast';
  * @param {Object} options - Hook options
  * @returns {Object} Job status and control functions
  */
-export const useJobProgress = (jobId, options = {}) => {
+export const useJobProgress = (jobId: any, options: any = {}) => {
   const {
     onProgress = null,
     onSuccess = null,
@@ -390,11 +390,7 @@ export const useForm = (initialValues = {}, onSubmit) => {
 
     try {
       await onSubmit(values);
-    } catch (error) {
-      if (error.response?.data?.detail) {
-        toast.error(error.response.data.detail);
-      }
-      setErrors(error.response?.data?.errors || {});
+    } catch (error: any) {
     } finally {
       setIsSubmitting(false);
     }

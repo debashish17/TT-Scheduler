@@ -76,8 +76,8 @@ const JobDashboard = () => {
         return failedJobs;
       default:
         return [...activeJobs, ...completedJobs, ...failedJobs].sort(
-          (a, b) => new Date(b.submitted_at || b.completed_at || b.failed_at) -
-                   new Date(a.submitted_at || a.completed_at || a.failed_at)
+          (a: any, b: any) => (new Date(b.submitted_at || b.completed_at || b.failed_at).getTime()) -
+                   (new Date(a.submitted_at || a.completed_at || a.failed_at).getTime())
         );
     }
   };
@@ -266,13 +266,13 @@ const JobDashboard = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan="7" className="px-6 py-4 text-center">
+                    <td colSpan={7} className="px-6 py-4 text-center">
                       Loading jobs...
                     </td>
                   </tr>
                 ) : filteredJobs.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="px-6 py-4 text-center text-gray-500">
+                    <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
                       No jobs found
                     </td>
                   </tr>
@@ -322,7 +322,7 @@ const JobRow = ({ job, status, statusIcon, onCancel, onRetry, onView }) => {
   const startTime = job.submitted_at || job.started_at || job.completed_at || job.failed_at;
   const endTime = job.completed_at || job.failed_at;
   const duration = endTime ?
-    Math.round((new Date(endTime) - new Date(startTime)) / 1000) : null;
+    Math.round(((new Date(endTime) as any) - (new Date(startTime) as any)) / 1000) : null;
 
   return (
     <tr className="hover:bg-gray-50">

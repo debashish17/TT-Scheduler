@@ -45,8 +45,8 @@ const TimetableGrid = () => {
   const currentClass = selectedClass || classes[0] || '';
 
   const allSubjects = [...new Set(assignments.map(a => a.subject_code))];
-  const subjectColors = {};
-  allSubjects.forEach((code, i) => { subjectColors[code] = COLORS[i % COLORS.length]; });
+  const subjectColors: Record<string, string> = {};
+  allSubjects.forEach((code: any, i) => { subjectColors[code] = COLORS[i % COLORS.length]; });
 
   const buildClassGrid = (className) => {
     const grid = {};
@@ -170,7 +170,7 @@ const TimetableGrid = () => {
       {/* Class Selector */}
       {classes.length > 1 && (
         <div className="flex gap-2 mb-4 flex-wrap print:hidden">
-          {classes.map(cls => (
+          {classes.map((cls: any) => (
             <button key={cls}
               onClick={() => setSelectedClass(cls)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -228,7 +228,7 @@ const TimetableGrid = () => {
         {/* Legend */}
         <div className="p-4 border-t border-gray-100 bg-gray-50">
           <div className="flex flex-wrap gap-2">
-            {allSubjects.map(code => {
+            {allSubjects.map((code: any) => {
               const subj = assignments.find(a => a.subject_code === code);
               return (
                 <span key={code} className={`px-3 py-1 rounded-full text-xs font-medium border ${subjectColors[code]}`}>

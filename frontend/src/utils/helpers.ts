@@ -309,11 +309,11 @@ export const retry = async (fn, maxRetries = 3, delay = 1000) => {
  * @param {Object} params - Query parameters
  * @returns {string} URL with query string
  */
-export const createQueryURL = (baseUrl, params) => {
+export const createQueryURL = (baseUrl: string, params: Record<string, any>) => {
   const url = new URL(baseUrl, window.location.origin);
   Object.entries(params).forEach(([key, value]) => {
     if (value !== null && value !== undefined) {
-      url.searchParams.append(key, value);
+      url.searchParams.append(key, String(value));
     }
   });
   return url.toString();

@@ -186,7 +186,7 @@ const SetupSummary = () => {
         };
         const saveResult = await simpleTimetableAPI.saveTimetable(savePayload);
         console.log('Timetable saved to DB:', saveResult.data);
-      } catch (saveErr) {
+      } catch (saveErr: any) {
         console.warn('DB save warning (timetable still visible):', saveErr.message);
       }
 
@@ -195,7 +195,7 @@ const SetupSummary = () => {
         navigate('/timetable');
       }
 
-    } catch (err) {
+    } catch (err: any) {
       let msg;
       if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
         msg = 'The solver is taking too long to respond. Try reducing periods_per_week or adding more rooms/teachers, then try again.';

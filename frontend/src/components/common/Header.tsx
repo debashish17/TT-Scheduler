@@ -1,5 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
+import { useAuthStore } from '../../store/authStore';
 
 const TIMETABLE_PATHS = ['/timetable', '/faculty-view', '/student-view', '/analytics'];
 
@@ -7,6 +8,7 @@ const Header = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { clearOnboardingData } = useOnboardingStore();
+  const { user, signOut } = useAuthStore();
 
   const handleLogoClick = () => {
     if (window.confirm('Reset all data and start over from the beginning?')) {
@@ -47,15 +49,27 @@ const Header = () => {
           </div>
         )}
 
-        {/* Right: reset shortcut on timetable pages */}
-        {isTimetablePage && (
-          <button
-            onClick={handleLogoClick}
-            className="text-xs text-gray-400 hover:text-red-500 transition-colors shrink-0"
-          >
-            Start Over
-          </button>
-        )}
+        <div className="flex items-center gap-4 shrink-0">
+          {isTimetablePage && (
+            <button
+              onClick={handleLogoClick}
+              className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+            >
+              Start Over
+            </button>
+          )}
+          {user && (
+            <button
+              onClick={() => {
+                signOut();
+                navigate('/login');
+              }}
+              className="text-sm font-medium text-gray-600 hover:text-red-600 transition-colors"
+            >
+              Logout
+            </button>
+          )}
+        </div>
       </div>
     </header>
   );

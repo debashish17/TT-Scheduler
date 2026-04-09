@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
-const Badge = React.forwardRef(({ className, variant = 'default', ...props }, ref) => {
+const Badge = React.forwardRef<any, any>(({ className, variant = 'default', ...props }, ref) => {
   const variants = {
     default: 'bg-primary-600 text-white hover:bg-primary-700',
     secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',

@@ -8,7 +8,7 @@ import { persist } from 'zustand/middleware';
 /**
  * Authentication Store
  */
-export const useAuthStore = create(
+export const useAuthStore = create<any>()(
   persist(
     (set) => ({
       user: null,
@@ -43,7 +43,7 @@ export const useAuthStore = create(
 /**
  * Institution Store
  */
-export const useInstitutionStore = create(
+export const useInstitutionStore = create<any>()(
   persist(
     (set) => ({
       currentInstitution: null,
@@ -87,7 +87,7 @@ export const useInstitutionStore = create(
 /**
  * Job Tracking Store
  */
-export const useJobStore = create((set, get) => ({
+export const useJobStore = create<any>()((set, get) => ({
   activeJobs: [],
   completedJobs: [],
   failedJobs: [],
@@ -145,11 +145,11 @@ export const useJobStore = create((set, get) => ({
     }),
 
   getJobById: (jobId) => {
-    const state = get();
+    const state = get() as any;
     return (
-      state.activeJobs.find((j) => j.job_id === jobId) ||
-      state.completedJobs.find((j) => j.job_id === jobId) ||
-      state.failedJobs.find((j) => j.job_id === jobId)
+      state.activeJobs.find((j: any) => j.job_id === jobId) ||
+      state.completedJobs.find((j: any) => j.job_id === jobId) ||
+      state.failedJobs.find((j: any) => j.job_id === jobId)
     );
   },
 }));
@@ -201,7 +201,7 @@ export const useTimetableStore = create((set) => ({
 /**
  * UI State Store
  */
-export const useUIStore = create((set) => ({
+export const useUIStore = create<any>()((set) => ({
   sidebarOpen: true,
   theme: 'light',
   notifications: [],
@@ -332,7 +332,7 @@ export const useRoomStore = create((set) => ({
 /**
  * Onboarding Data Store
  */
-export const useOnboardingStore = create(
+export const useOnboardingStore = create<any>()(
   persist(
     (set) => ({
       institutionData: null,

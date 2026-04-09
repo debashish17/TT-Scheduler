@@ -26,10 +26,10 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
-    institution_id = Column(UUID(as_uuid=True), ForeignKey("institutions.id", ondelete="CASCADE"), nullable=False, index=True)
+    institution_id = Column(UUID(as_uuid=True), ForeignKey("institutions.id", ondelete="CASCADE"), nullable=True, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=True)  # Nullable for now (no auth yet)
-    role = Column(Enum(UserRole, name="user_role", create_type=False), nullable=False, index=True)
+    role = Column(Enum(UserRole, name="user_role", create_type=False), nullable=False, default=UserRole.SUPER_ADMIN, index=True)
     department_id = Column(UUID(as_uuid=True), ForeignKey("departments.id", ondelete="SET NULL"), nullable=True)
     is_active = Column(Boolean, default=True, server_default=text("TRUE"))
     created_at = Column(TIMESTAMP, server_default=text("NOW()"))

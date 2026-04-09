@@ -2,7 +2,7 @@
 Core configuration module for the Timetable Scheduler application.
 Loads settings from environment variables using pydantic-settings.
 """
-from typing import List
+from typing import List, Optional
 import json
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # Supabase Configuration
     SUPABASE_URL: str
     SUPABASE_KEY: str
-    SUPABASE_SERVICE_KEY: str
+    SUPABASE_SERVICE_KEY: Optional[str] = None
 
     # Database
     DATABASE_URL: str

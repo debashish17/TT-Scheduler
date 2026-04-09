@@ -10,6 +10,8 @@ from uuid import UUID
 import io
 
 from app.db.session import get_db
+from app.models import User
+from app.api.deps import get_current_user
 from app.schemas.faculty import FacultyCreate, FacultyUpdate, FacultyResponse, FacultyList
 from app.schemas.import_schemas import ImportResultResponse, ImportTemplate
 from app.services.faculty_service import faculty_service
