@@ -3,6 +3,7 @@
  * Centralized API communication with axios
  */
 import axios from 'axios';
+import { supabase } from '../lib/supabase';
 
 // API Base Configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -19,24 +20,20 @@ const apiClient = axios.create({
 
 // Request interceptor for adding auth token
 apiClient.interceptors.request.use(
-  (config) => {
-    // Get the active session from Supabase
-    // VITE_SUPABASE_PROJECT_ID could be useful or simply reading from Supabase client
-    const supabaseTokenStr = localStorage.getItem('sb-' + (import.meta.env.VITE_SUPABASE_PROJECT_ID || 'your-project-id') + '-auth-token');
-    
-    if (supabaseTokenStr) {
-      try {
-        const authData = JSON.parse(supabaseTokenStr);
-        if (authData?.access_token) {
-          config.headers.Authorization = `Bearer ${authData.access_token}`;
+  async (config) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        config.headers.Authorization = `Bearer ${session.access_token}`;
+      } else {
+        // Fallback to legacy auth_token
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
         }
-      } catch(e) {}
-    } else {
-       // fallback if the user overrides
-       const token = localStorage.getItem('auth_token');
-       if (token) {
-         config.headers.Authorization = `Bearer ${token}`;
-       }
+      }
+    } catch (e) {
+      console.error('Error getting session for API request:', e);
     }
     return config;
   },
@@ -55,9 +52,15 @@ apiClient.interceptors.response.use(
 
       switch (status) {
         case 401:
-          // Unauthorized - clear token (no login redirect in simplified app)
+          // Unauthorized - clear token
           localStorage.removeItem('auth_token');
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+              localStorage.removeItem(key);
+            }
+          });
           console.warn('Authentication token missing or invalid');
+          window.location.href = '/login';
           break;
         case 403:
           // Forbidden

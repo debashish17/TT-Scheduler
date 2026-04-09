@@ -54,7 +54,9 @@ async def get_current_user(
         return db_user
         
     except Exception as e:
-        # Catch any errors (expired token, malformed token, etc.)
+        # Catch any errors (expired token, malformed token, db error, etc.)
+        import logging
+        logging.getLogger(__name__).error(f"Error in get_current_user: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Could not validate credentials: {str(e)}",
