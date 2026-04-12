@@ -14,80 +14,89 @@ from app.core.config import settings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create Celery app
-celery_app = Celery(
-    "timetable_scheduler",
-    broker=settings.REDIS_URL,
-    backend=settings.REDIS_URL,
-    include=[
-        "app.tasks.timetable_generation",
-        "app.tasks.data_import",
-        "app.tasks.analytics",
-        "app.tasks.notifications"
-    ]
-)
+# Only initialise Celery when a broker URL is configured.
+# On Render free tier (no Redis) this block is skipped so the app boots cleanly.
+_celery_enabled = bool(settings.REDIS_URL)
 
-# Celery configuration
-celery_app.conf.update(
-    # Task routing and queues
-    task_routes={
-        "app.tasks.timetable_generation.*": {"queue": "timetable_generation"},
-        "app.tasks.data_import.*": {"queue": "data_processing"},
-        "app.tasks.analytics.*": {"queue": "analytics"},
-        "app.tasks.notifications.*": {"queue": "notifications"},
-    },
+if _celery_enabled:
+    # Create Celery app
+    celery_app = Celery(
+        "timetable_scheduler",
+        broker=settings.REDIS_URL,
+        backend=settings.REDIS_URL,
+        include=[
+            "app.tasks.timetable_generation",
+            "app.tasks.data_import",
+            "app.tasks.analytics",
+            "app.tasks.notifications"
+        ]
+    )
+else:
+    celery_app = None
+    logger.info("⚠ Celery disabled — REDIS_URL not configured (sync-only mode)")
 
-    # Define queues
-    task_queues=(
-        Queue("timetable_generation", routing_key="timetable_generation"),
-        Queue("data_processing", routing_key="data_processing"),
-        Queue("analytics", routing_key="analytics"),
-        Queue("notifications", routing_key="notifications"),
-        Queue("celery", routing_key="celery"),  # Default queue
-    ),
+# Celery configuration (only when enabled)
+if _celery_enabled and celery_app is not None:
+    celery_app.conf.update(
+        # Task routing and queues
+        task_routes={
+            "app.tasks.timetable_generation.*": {"queue": "timetable_generation"},
+            "app.tasks.data_import.*": {"queue": "data_processing"},
+            "app.tasks.analytics.*": {"queue": "analytics"},
+            "app.tasks.notifications.*": {"queue": "notifications"},
+        },
 
-    # Task execution settings
-    task_serializer="json",
-    accept_content=["json"],
-    result_serializer="json",
-    timezone="UTC",
-    enable_utc=True,
+        # Define queues
+        task_queues=(
+            Queue("timetable_generation", routing_key="timetable_generation"),
+            Queue("data_processing", routing_key="data_processing"),
+            Queue("analytics", routing_key="analytics"),
+            Queue("notifications", routing_key="notifications"),
+            Queue("celery", routing_key="celery"),  # Default queue
+        ),
 
-    # Result backend settings
-    result_expires=7200,  # 2 hours
-    result_persistent=True,
+        # Task execution settings
+        task_serializer="json",
+        accept_content=["json"],
+        result_serializer="json",
+        timezone="UTC",
+        enable_utc=True,
 
-    # Task execution limits
-    task_time_limit=3600,  # 1 hour hard limit
-    task_soft_time_limit=3300,  # 55 minutes soft limit
-    worker_prefetch_multiplier=1,  # Process one task at a time
+        # Result backend settings
+        result_expires=7200,  # 2 hours
+        result_persistent=True,
 
-    # Retry settings
-    task_acks_late=True,
-    worker_disable_rate_limits=False,
+        # Task execution limits
+        task_time_limit=3600,  # 1 hour hard limit
+        task_soft_time_limit=3300,  # 55 minutes soft limit
+        worker_prefetch_multiplier=1,  # Process one task at a time
 
-    # Monitoring and visibility
-    task_track_started=True,
-    task_send_sent_event=True,
+        # Retry settings
+        task_acks_late=True,
+        worker_disable_rate_limits=False,
 
-    # Worker settings
-    worker_max_tasks_per_child=50,  # Restart worker after 50 tasks
-    worker_concurrency=4,  # Number of concurrent processes
+        # Monitoring and visibility
+        task_track_started=True,
+        task_send_sent_event=True,
 
-    # Security
-    task_always_eager=False,  # Set to True for testing without Redis
-    task_eager_propagates=True,
-)
+        # Worker settings
+        worker_max_tasks_per_child=50,  # Restart worker after 50 tasks
+        worker_concurrency=4,  # Number of concurrent processes
 
-# Queue priority configuration
-celery_app.conf.task_default_queue = 'celery'
-celery_app.conf.task_default_exchange = 'celery'
-celery_app.conf.task_default_exchange_type = 'direct'
-celery_app.conf.task_default_routing_key = 'celery'
+        # Security
+        task_always_eager=False,  # Set to True for testing without Redis
+        task_eager_propagates=True,
+    )
 
-# Enable events for monitoring
-celery_app.conf.worker_send_task_events = True
-celery_app.conf.task_send_sent_event = True
+    # Queue priority configuration
+    celery_app.conf.task_default_queue = 'celery'
+    celery_app.conf.task_default_exchange = 'celery'
+    celery_app.conf.task_default_exchange_type = 'direct'
+    celery_app.conf.task_default_routing_key = 'celery'
+
+    # Enable events for monitoring
+    celery_app.conf.worker_send_task_events = True
+    celery_app.conf.task_send_sent_event = True
 
 
 @worker_ready.connect

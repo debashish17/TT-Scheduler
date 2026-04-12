@@ -1,0 +1,61 @@
+# Render.com deployment blueprint for TT-Scheduler Backend
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: tt-scheduler-backend
+    runtime: python
+    region: oregon       # Choose: oregon | frankfurt | singapore | ohio
+    plan: free           # free | starter | standard | pro
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+
+    envVars:
+      # ── Supabase ──────────────────────────────────────────────
+      - key: SUPABASE_URL
+        sync: false      # Set manually in Render dashboard
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+
+      # ── Database ──────────────────────────────────────────────
+      - key: DATABASE_URL
+        sync: false
+
+      # ── App ───────────────────────────────────────────────────
+      - key: PROJECT_NAME
+        value: Timetable Scheduler
+      - key: VERSION
+        value: 1.0.0
+      - key: API_V1_STR
+        value: /api/v1
+      - key: ENVIRONMENT
+        value: production
+
+      # ── Security ──────────────────────────────────────────────
+      - key: SECRET_KEY
+        generateValue: true     # Render auto-generates a random secret
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 1440
+
+      # ── CORS ──────────────────────────────────────────────────
+      # After deploying frontend to Vercel, update this with your real URL:
+      # e.g. ["https://tt-scheduler.vercel.app","http://localhost:5173"]
+      - key: BACKEND_CORS_ORIGINS
+        sync: false
+
+      # ── Frontend URL (for links in emails etc.) ───────────────
+      - key: FRONTEND_URL
+        sync: false
+
+      # ── Celery / Redis (disabled — leave blank on free tier) ──
+      - key: CELERY_BROKER_URL
+        value: ""
+      - key: CELERY_RESULT_BACKEND
+        value: ""
+      - key: REDIS_URL
+        value: ""

@@ -53,9 +53,10 @@ class Settings(BaseSettings):
         return v
 
     # Celery & Redis Configuration
-    REDIS_URL: str = "redis://localhost:6379/0"
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    # Set to empty string to disable Celery (e.g. on Render free tier)
+    REDIS_URL: str = ""
+    CELERY_BROKER_URL: str = ""
+    CELERY_RESULT_BACKEND: str = ""
 
     # Email Configuration
     SMTP_ENABLED: bool = False

@@ -11,7 +11,7 @@ class WebSocketClient {
   reconnectDelay: number;
 
   constructor(baseUrl?: string) {
-    this.baseUrl = baseUrl || 'ws://localhost:8000';
+    this.baseUrl = baseUrl || import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
     this.connections = new Map();
     this.reconnectAttempts = new Map();
     this.maxReconnectAttempts = 5;
