@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Header from './components/common/Header';
 import { Toaster } from 'react-hot-toast';
+import { useRestoreSnapshot } from './hooks/useRestoreSnapshot';
 
 // Onboarding Screens
 import WelcomeScreen from './components/onboarding/WelcomeScreen';        // Step 1: Institution + Teachers
@@ -19,6 +20,7 @@ import TimetableGrid from './components/timetable/TimetableGrid';         // Mas
 import FacultyView from './components/timetable/FacultyView';             // By teacher
 import StudentView from './components/timetable/StudentView';             // By class/student
 import AnalyticsView from './components/timetable/AnalyticsView';         // Real analytics dashboard
+import TimetableHistory from './components/timetable/TimetableHistory';   // Per-user history
 
 // Auth & Protection
 import Login from './components/auth/Login';
@@ -26,6 +28,9 @@ import Signup from './components/auth/Signup';
 import ProtectedRoute from './components/common/ProtectedRoute';
 
 function App() {
+  // Restores the last DB snapshot on login and isolates data per user
+  useRestoreSnapshot();
+
   return (
     <Router>
       <div className="min-h-screen bg-gradient-to-br from-slate-100 to-blue-50">
@@ -59,6 +64,7 @@ function App() {
               <Route path="/faculty-view" element={<FacultyView />} />
               <Route path="/student-view" element={<StudentView />} />
               <Route path="/analytics" element={<AnalyticsView />} />
+              <Route path="/history" element={<TimetableHistory />} />
 
               {/* Fallback redirects for old screen numbers */}
               <Route path="/screen-8" element={<Navigate to="/screen-7" replace />} />

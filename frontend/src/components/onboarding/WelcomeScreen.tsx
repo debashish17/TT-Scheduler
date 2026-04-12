@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaGraduationCap, FaArrowRight, FaPlus, FaTrash } from 'react-icons/fa';
+import { FaGraduationCap, FaArrowRight, FaPlus, FaTrash, FaHistory } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 
 const steps = ['Institution', 'Batches', 'Subjects', 'Schedule', 'Rooms', 'Rules', 'Generate'];
@@ -74,12 +74,23 @@ const WelcomeScreen = () => {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-white rounded-2xl shadow-lg p-8">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
-            <FaGraduationCap className="text-3xl text-blue-600" />
+        {/* Header with History shortcut */}
+        <div className="flex items-start justify-between mb-8">
+          <div className="text-center flex-1">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
+              <FaGraduationCap className="text-3xl text-blue-600" />
+            </div>
+            <h1 className="text-3xl font-bold text-gray-900">Smart Timetable Scheduler</h1>
+            <p className="text-gray-500 mt-1">Set up your institution in a few easy steps</p>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Smart Timetable Scheduler</h1>
-          <p className="text-gray-500 mt-1">Set up your institution in a few easy steps</p>
+          <button
+            onClick={() => navigate('/history')}
+            title="View your previously generated timetables"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 border border-indigo-200 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors shrink-0"
+          >
+            <FaHistory size={13} />
+            My History
+          </button>
         </div>
 
         <ProgressBar current={1} total={7} steps={steps} />

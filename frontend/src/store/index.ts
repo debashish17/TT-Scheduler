@@ -335,6 +335,9 @@ export const useRoomStore = create((set) => ({
 export const useOnboardingStore = create<any>()(
   persist(
     (set) => ({
+      // ── User scoping — prevents cross-user data leakage ──
+      userId: null as string | null,
+
       institutionData: null,
       workflowData: null,
       classesData: [],
@@ -347,6 +350,7 @@ export const useOnboardingStore = create<any>()(
       generatedTimetable: null,
       timetableError: null,
 
+      setUserId: (id: string | null) => set({ userId: id }),
       setInstitutionData: (data) => set({ institutionData: data }),
       setWorkflowData: (data) => set({ workflowData: data }),
       setClassesData: (data) => set({ classesData: data }),
@@ -360,6 +364,7 @@ export const useOnboardingStore = create<any>()(
       setTimetableError: (error) => set({ timetableError: error, generatedTimetable: null }),
 
       clearOnboardingData: () => set({
+        userId: null,
         institutionData: null,
         workflowData: null,
         classesData: [],

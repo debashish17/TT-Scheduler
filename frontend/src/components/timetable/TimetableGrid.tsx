@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaCalendarAlt, FaUserTie, FaGraduationCap, FaExclamationTriangle, FaFileExcel, FaPrint, FaChartBar, FaRedo } from 'react-icons/fa';
+import { FaCalendarAlt, FaUserTie, FaGraduationCap, FaExclamationTriangle, FaFileExcel, FaPrint, FaChartBar, FaRedo, FaHistory } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 import { simpleTimetableAPI } from '../../api/client';
 import toast from 'react-hot-toast';
@@ -118,10 +118,11 @@ const TimetableGrid = () => {
           {/* View Tabs */}
           <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
             {[
-              { id: 'class', icon: <FaCalendarAlt />, label: 'Class', path: '/timetable' },
-              { id: 'faculty', icon: <FaUserTie />, label: 'Faculty', path: '/faculty-view' },
-              { id: 'student', icon: <FaGraduationCap />, label: 'Student', path: '/student-view' },
-              { id: 'analytics', icon: <FaChartBar />, label: 'Analytics', path: '/analytics' },
+              { id: 'class',     icon: <FaCalendarAlt />, label: 'Class',     path: '/timetable'    },
+              { id: 'faculty',   icon: <FaUserTie />,     label: 'Faculty',   path: '/faculty-view' },
+              { id: 'student',   icon: <FaGraduationCap />, label: 'Student', path: '/student-view' },
+              { id: 'analytics', icon: <FaChartBar />,    label: 'Analytics', path: '/analytics'    },
+              { id: 'history',   icon: <FaHistory />,     label: 'History',   path: '/history'      },
             ].map(tab => (
               <button key={tab.id}
                 onClick={() => navigate(tab.path)}

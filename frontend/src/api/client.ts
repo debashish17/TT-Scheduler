@@ -321,6 +321,33 @@ export const simpleTimetableAPI = {
   saveTimetable: (data) => apiClient.post('/timetable/save', data),
 };
 
+// ============================================
+// SNAPSHOTS API — per-user full state persistence
+// ============================================
+export const snapshotsAPI = {
+  /** Save a full snapshot (all inputs + timetable result) for the current user */
+  save: (data: {
+    institution_name: string;
+    institution_data: any;
+    classes_data: any[];
+    subjects_data: any[];
+    teachers_data: any[];
+    time_data: any;
+    rooms_data: any[];
+    constraints_data: any;
+    generated_timetable: any;
+  }) => apiClient.post('/snapshots/save', data),
+
+  /** Get the most recent snapshot for the current user (used on login restore) */
+  getLatest: () => apiClient.get('/snapshots/latest'),
+
+  /** Get list of last 20 snapshots (summary only, for History page) */
+  getHistory: () => apiClient.get('/snapshots/history'),
+
+  /** Load a specific historical snapshot by ID */
+  getById: (id: string) => apiClient.get(`/snapshots/${id}`),
+};
+
 // Export base URLs for WebSocket and other purposes
 export const config = {
   API_BASE_URL,
