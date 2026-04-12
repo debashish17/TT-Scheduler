@@ -84,3 +84,6 @@ frontend/tests/__pycache__/
 .agents
 Smart_Timetable_Review1_Presentation.pptx
 inspect_r1.py
+
+# Private deployment notes (contain real URLs / service names)
+DEPLOYMENT.md
