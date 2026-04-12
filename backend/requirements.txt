@@ -4,7 +4,7 @@ uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 
 # Database
-supabase==2.3.0
+supabase==2.9.1
 sqlalchemy==2.0.25
 psycopg2-binary==2.9.9
 alembic==1.13.1
@@ -14,7 +14,7 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 pydantic[email]==2.5.3
 pydantic-settings==2.1.0
-gotrue==2.4.2          # Must stay <=2.4.x while httpx<0.27 is used
+# gotrue is pulled automatically by supabase — do not pin separately
 
 # Background Jobs
 celery==5.3.6
