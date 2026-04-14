@@ -27,7 +27,7 @@
 
 ---
 
-## ✨ Features
+## Features
 
 | | Feature | Description |
 |---|---|---|
@@ -42,7 +42,7 @@
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 TT-Scheduler/
@@ -73,7 +73,7 @@ TT-Scheduler/
 
 ---
 
-## 🧠 Constraint Engine
+## Constraint Engine
 
 The CP-SAT solver enforces **8 hard constraints** — if any are violated, the solution is discarded entirely:
 
@@ -90,7 +90,7 @@ The CP-SAT solver enforces **8 hard constraints** — if any are violated, the s
 
 ---
 
-## 🚀 Quick Start (Local)
+## Quick Start (Local)
 
 ### Prerequisites
 
@@ -145,7 +145,7 @@ npm run dev
 
 ---
 
-## ⚙️ Environment Variables
+## Environment Variables
 
 ### Frontend — `frontend/.env`
 
@@ -168,7 +168,7 @@ FRONTEND_URL=http://localhost:5173
 
 ---
 
-## 🌍 Deployment
+## Deployment
 
 The app is deployed at:
 
@@ -195,7 +195,7 @@ The app is deployed at:
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
@@ -209,7 +209,7 @@ The app is deployed at:
 
 ---
 
-## 📡 Key API Endpoints
+## Key API Endpoints
 
 ```
 POST   /api/v1/auth/register              Register a new user
@@ -231,7 +231,7 @@ Full interactive docs: **[tt-scheduler.onrender.com/docs](https://tt-scheduler.o
 
 ---
 
-## 🧪 Development
+## Development
 
 ```bash
 # Backend tests
@@ -247,7 +247,7 @@ mypy app/
 
 ---
 
-## 📄 License
+## License
 
 MIT © 2026 — built with ☕ and way too much constraint programming.
 
