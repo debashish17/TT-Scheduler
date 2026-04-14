@@ -21,7 +21,7 @@
 
 <br/>
 
-**🌐 [Live Demo](https://tt-scheduler.vercel.app)** &nbsp;•&nbsp; **📄 [API Docs](https://tt-scheduler.onrender.com/docs)**
+**🌐 [Live Demo](https://tt-scheduler.vercel.app)** &nbsp;•&nbsp; **📄 [API Docs](https://tt-scheduler.onrender.com/api/v1/docs)**
 
 </div>
 
@@ -227,7 +227,7 @@ GET    /snapshots/{id}                    Load a specific snapshot
 POST   /api/v1/faculty/import             Bulk import via Excel
 ```
 
-Full interactive docs: **[tt-scheduler.onrender.com/docs](https://tt-scheduler.onrender.com/docs)**
+Full interactive docs: **[tt-scheduler.onrender.com/docs](https://tt-scheduler.onrender.com/api/v1/docs)**
 
 ---
 
