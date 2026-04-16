@@ -5,13 +5,14 @@ import { Toaster } from 'react-hot-toast';
 import { useRestoreSnapshot } from './hooks/useRestoreSnapshot';
 
 // Onboarding Screens
-import WelcomeScreen from './components/onboarding/WelcomeScreen';        // Step 1: Institution + Teachers
+import WelcomeScreen from './components/onboarding/WelcomeScreen';        // Step 1: Institution
 import BatchSetup from './components/onboarding/BatchSetup';              // Step 2: Batches
 import DepartmentSetup from './components/onboarding/DepartmentSetup';    // Step 3: Subjects
-import TimeStructure from './components/onboarding/TimeStructure';        // Step 4: Schedule
-import ClassroomSetup from './components/onboarding/ClassroomSetup';      // Step 5: Rooms
-import Constraints from './components/onboarding/Constraints';            // Step 6: Rules
-import SetupSummary from './components/onboarding/SetupSummary';          // Step 7: Review + Generate
+import TeacherSetup from './components/onboarding/TeacherSetup';          // Step 4: Teachers
+import TimeStructure from './components/onboarding/TimeStructure';        // Step 5: Schedule
+import ClassroomSetup from './components/onboarding/ClassroomSetup';      // Step 6: Rooms
+import Constraints from './components/onboarding/Constraints';            // Step 7: Rules
+import SetupSummary from './components/onboarding/SetupSummary';          // Step 8: Review + Generate
 import WorkflowConfig from './components/onboarding/WorkflowConfig';      // Workflow chooser (optional)
 import SetupComplete from './components/onboarding/SetupComplete';        // Setup complete confirmation
 
@@ -47,13 +48,14 @@ function App() {
               <Route path="/" element={<Navigate to="/screen-1" replace />} />
 
               {/* === ONBOARDING FLOW === */}
-              <Route path="/screen-1" element={<WelcomeScreen />} />     {/* Institution + Teachers */}
+              <Route path="/screen-1" element={<WelcomeScreen />} />     {/* Institution */}
               <Route path="/screen-2" element={<BatchSetup />} />        {/* Batches */}
               <Route path="/screen-3" element={<DepartmentSetup />} />   {/* Subjects */}
-              <Route path="/screen-4" element={<TimeStructure />} />     {/* Schedule */}
-              <Route path="/screen-5" element={<ClassroomSetup />} />    {/* Rooms */}
-              <Route path="/screen-6" element={<Constraints />} />       {/* Rules */}
-              <Route path="/screen-7" element={<SetupSummary />} />      {/* Review + Generate */}
+              <Route path="/screen-4" element={<TeacherSetup />} />      {/* Teachers */}
+              <Route path="/screen-5" element={<TimeStructure />} />     {/* Schedule */}
+              <Route path="/screen-6" element={<ClassroomSetup />} />    {/* Rooms */}
+              <Route path="/screen-7" element={<Constraints />} />       {/* Rules */}
+              <Route path="/screen-8" element={<SetupSummary />} />      {/* Review + Generate */}
 
               {/* === ADDITIONAL ONBOARDING SCREENS === */}
               <Route path="/workflow" element={<WorkflowConfig />} />

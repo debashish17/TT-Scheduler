@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { FaArrowRight, FaArrowLeft, FaPlus, FaTrash } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 
-const steps = ['Institution', 'Batches', 'Subjects', 'Schedule', 'Rooms', 'Rules', 'Generate'];
+const steps = ['Institution', 'Batches', 'Subjects', 'Teachers', 'Schedule', 'Rooms', 'Rules', 'Generate'];
 
 const ProgressBar = ({ current, total, steps: stepLabels }) => (
   <div className="mb-8">
@@ -56,7 +56,7 @@ const ClassroomSetup = () => {
   const handleNext = () => {
     if (rooms.length === 0) { alert('Add at least one classroom'); return; }
     setRoomsData(rooms);
-    navigate('/screen-6');
+    navigate('/screen-7');
   };
 
   const totalCapacity = rooms.reduce((s, r) => s + (parseInt(r.capacity) || 0), 0);
@@ -65,7 +65,7 @@ const ClassroomSetup = () => {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-white rounded-2xl shadow-lg p-8">
-        <ProgressBar current={5} total={7} steps={steps} />
+        <ProgressBar current={5} total={8} steps={steps} />
 
         <h2 className="text-2xl font-bold text-gray-800 mb-1">Classrooms</h2>
         <p className="text-gray-500 mb-6">Add your classrooms and labs. The scheduler will assign classes to rooms that can fit them.</p>
@@ -156,7 +156,7 @@ const ClassroomSetup = () => {
         </div>
 
         <div className="flex justify-between mt-8 pt-6 border-t border-gray-200">
-          <button onClick={() => navigate('/screen-4')}
+          <button onClick={() => navigate('/screen-5')}
             className="flex items-center space-x-2 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
             <FaArrowLeft />
             <span>Back</span>

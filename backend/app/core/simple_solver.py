@@ -45,6 +45,19 @@ def solve_timetable(problem: Dict[str, Any]) -> Dict[str, Any]:
     """
     problem = _preprocess(problem)
     warnings = _diagnose_problem(problem)
+    
+    # Fast fail if pre-check reveals impossible constraints (e.g. missing teachers, capacity limits)
+    if any(w.get("level") == "error" for w in warnings):
+        logger.warning("Fail-fast triggered due to pre-check errors. Returning to frontend for Auto-Fix.")
+        time_slots = _generate_time_slots(
+            problem.get("start_time", "08:00"),
+            int(problem.get("periods_per_day", 7)),
+            int(problem.get("period_duration_minutes", 45))
+        )
+        fast_fail_result = _empty_result(problem, time_slots, problem.get("working_days", []), "Precheck")
+        fast_fail_result["warnings"] = warnings
+        return fast_fail_result
+
     try:
         result = _cp_solve(problem)
     except ImportError:
@@ -52,8 +65,17 @@ def solve_timetable(problem: Dict[str, Any]) -> Dict[str, Any]:
         result = _greedy_solve(problem)
     except Exception as e:
         logger.error(f"CP-SAT failed: {e}", exc_info=True)
-        logger.warning("CP-SAT failed — falling back to Greedy solver.")
-        result = _greedy_solve(problem)
+        return _empty_result(problem, [], problem.get("working_days", []), "CP-SAT")
+
+    # Flag if CP-SAT had to leave unplaced sessions
+    if result.get("stats", {}).get("unplaced_sessions", 0) > 0:
+        unplaced = result["stats"]["unplaced_sessions"]
+        warnings.append({
+            "level": "warning",
+            "code": "UNPLACED_SESSIONS",
+            "message": f"Solver could not fit {unplaced} session(s) due to constraints.",
+            "detail": {"unplaced_count": unplaced}
+        })
 
     # Merge pre-solve warnings with any placement warnings from greedy
     existing = result.get("warnings", [])
@@ -90,7 +112,7 @@ def _diagnose_problem(problem: Dict[str, Any]) -> List[Dict[str, Any]]:
     for subj in subjects:
         qualified = [
             t["name"] for t in teachers
-            if subj["code"] in t.get("subjects", []) or not t.get("subjects")
+            if subj["code"] in t.get("subjects", [])
         ]
         if not qualified:
             issues.append({
@@ -142,7 +164,7 @@ def _diagnose_problem(problem: Dict[str, Any]) -> List[Dict[str, Any]]:
         sessions_for_subj = ppw * len(affected_classes)
         qualified_teachers = [
             t for t in teachers
-            if subj["code"] in t.get("subjects", []) or not t.get("subjects")
+            if subj["code"] in t.get("subjects", [])
         ]
         teacher_capacity = len(qualified_teachers) * slots_pw
         if qualified_teachers and sessions_for_subj > teacher_capacity:
@@ -288,8 +310,6 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
     teacher_can = []
     for t in teachers:
         can = {subj_idx[c] for c in t.get("subjects", []) if c in subj_idx}
-        if not can:
-            can = set(range(len(subjects)))  # can teach all if unspecified
         teacher_can.append(can)
 
     # Room eligibility: room_ok[c_idx] = list of room indices with enough capacity
@@ -321,7 +341,9 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
     model = cp_model.CpModel()
 
     # ── Decision variables ─────────────────────────────────
-    # For each session: which valid_period index, which day, which teacher, which room
+    # For each session: is it scheduled, which valid_period index, which day, which teacher, which room
+    is_scheduled = [model.NewBoolVar(f"is_scheduled_{s}") for s in range(S)]
+
     day_var     = [model.NewIntVar(0, D - 1,      f"d{s}") for s in range(S)]
     # Use valid_period index (0..n_valid-1) then map back
     vp_var      = [model.NewIntVar(0, n_valid - 1, f"vp{s}") for s in range(S)]
@@ -347,8 +369,10 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
     #    We encode (day, vp) as a single integer: day * n_valid + vp
     class_timeslot = {}   # ci → list of linearised time vars
     for s, (ci, si) in enumerate(sessions):
-        combo = model.NewIntVar(0, D * n_valid - 1, f"cdt{s}")
-        model.Add(combo == day_var[s] * n_valid + vp_var[s])
+        # We add S to the domain to give unscheduled sessions a unique dummy value
+        combo = model.NewIntVar(0, D * n_valid + S, f"cdt{s}")
+        model.Add(combo == day_var[s] * n_valid + vp_var[s]).OnlyEnforceIf(is_scheduled[s])
+        model.Add(combo == D * n_valid + s).OnlyEnforceIf(is_scheduled[s].Not())
         class_timeslot.setdefault(ci, []).append(combo)
 
     for ci, vars_list in class_timeslot.items():
@@ -356,32 +380,24 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
             model.AddAllDifferent(vars_list)
 
     # 2. No two sessions with the same teacher at the same (day, vp)
-    #    We use a conditional reification approach via auxiliary bool vars.
-    #    For each pair (s1, s2) that MIGHT share a teacher → if same teacher → different slot
-    #    This is O(S²) pairs — expensive for large S.
-    #    Instead: for each (teacher, day, vp_index) — at most one session.
-    #    We do this with linearisation: teacher * D * n_valid + day * n_valid + vp ← unique
-    #    but teacher_var is not fixed, so we use AddNoOverlap2D equivalent.
-    #
-    # Efficient approach: create one integer per session = t*D*n_valid + day*n_valid + vp
-    # and AddAllDifferent across all sessions.
-    # This correctly prevents teacher+timeslot conflicts WITHOUT O(S²) pairs.
-
     teacher_timeslot = []
-    teacher_combo_max = len(teachers) * D * n_valid
+    teacher_combo_max = len(teachers) * D * n_valid + S
     for s in range(S):
-        tc = model.NewIntVar(0, teacher_combo_max - 1, f"tdt{s}")
-        # tc = t_var[s] * D * n_valid + day_var[s] * n_valid + vp_var[s]
-        model.Add(tc == t_var[s] * D * n_valid + day_var[s] * n_valid + vp_var[s])
+        tc = model.NewIntVar(0, teacher_combo_max, f"tdt{s}")
+        model.Add(tc == t_var[s] * D * n_valid + day_var[s] * n_valid + vp_var[s]).OnlyEnforceIf(is_scheduled[s])
+        # Unique dummy value if not scheduled
+        model.Add(tc == len(teachers) * D * n_valid + s).OnlyEnforceIf(is_scheduled[s].Not())
         teacher_timeslot.append(tc)
     model.AddAllDifferent(teacher_timeslot)
 
     # 3. No two sessions in the same room at the same (day, vp)
     room_timeslot = []
-    room_combo_max = len(rooms) * D * n_valid
+    room_combo_max = len(rooms) * D * n_valid + S
     for s in range(S):
-        rc = model.NewIntVar(0, room_combo_max - 1, f"rdt{s}")
-        model.Add(rc == r_var[s] * D * n_valid + day_var[s] * n_valid + vp_var[s])
+        rc = model.NewIntVar(0, room_combo_max, f"rdt{s}")
+        model.Add(rc == r_var[s] * D * n_valid + day_var[s] * n_valid + vp_var[s]).OnlyEnforceIf(is_scheduled[s])
+        # Unique dummy value if not scheduled
+        model.Add(rc == len(rooms) * D * n_valid + s).OnlyEnforceIf(is_scheduled[s].Not())
         room_timeslot.append(rc)
     model.AddAllDifferent(room_timeslot)
 
@@ -420,19 +436,40 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
                 model.Add(t_var[s] != ti).OnlyEnforceIf(t_match.Not())
                 model.Add(day_var[s] == d).OnlyEnforceIf(d_match)
                 model.Add(day_var[s] != d).OnlyEnforceIf(d_match.Not())
-                model.AddBoolAnd([t_match, d_match]).OnlyEnforceIf(is_this_teacher_day)
-                model.AddBoolOr([t_match.Not(), d_match.Not()]).OnlyEnforceIf(is_this_teacher_day.Not())
+                model.AddBoolAnd([t_match, d_match, is_scheduled[s]]).OnlyEnforceIf(is_this_teacher_day)
+                model.AddBoolOr([t_match.Not(), d_match.Not(), is_scheduled[s].Not()]).OnlyEnforceIf(is_this_teacher_day.Not())
                 indicators.append(is_this_teacher_day)
             if indicators:
                 model.Add(sum(indicators) <= max_per_day_teacher)
 
-    # Minimise spread penalties
+    # 6. Soft/Hard: max periods per week per teacher
+    for ti, t in enumerate(teachers):
+        max_pw = t.get("max_periods_per_week")
+        if max_pw is not None:
+            max_pw = int(max_pw)
+            indicators = []
+            for s in range(S):
+                is_this_teacher_week = model.NewBoolVar(f"hw_{ti}_{s}")
+                t_match = model.NewBoolVar(f"tmatch_w_{ti}_{s}")
+                model.Add(t_var[s] == ti).OnlyEnforceIf(t_match)
+                model.Add(t_var[s] != ti).OnlyEnforceIf(t_match.Not())
+                model.AddBoolAnd([t_match, is_scheduled[s]]).OnlyEnforceIf(is_this_teacher_week)
+                model.AddBoolOr([t_match.Not(), is_scheduled[s].Not()]).OnlyEnforceIf(is_this_teacher_week.Not())
+                indicators.append(is_this_teacher_week)
+            if indicators:
+                model.Add(sum(indicators) <= max_pw)
+
+    # ── Objective ──────────────────────────────────────────
+    # Maximize total scheduled sessions (huge reward), minus penalties
+    reward_scheduled = sum(is_scheduled[s] * 10000 for s in range(S))
     if penalty_terms:
-        model.Minimize(sum(penalty_terms))
+        model.Maximize(reward_scheduled - sum(penalty_terms))
+    else:
+        model.Maximize(reward_scheduled)
 
     # ── Solve ──────────────────────────────────────────────
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 60.0
+    solver.parameters.max_time_in_seconds = 30.0
     solver.parameters.num_search_workers = 4   # parallel search
     solver.parameters.log_search_progress = False
 
@@ -442,7 +479,12 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
 
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         assignments = []
+        unplaced_count = 0
         for s, (ci, si) in enumerate(sessions):
+            if not solver.Value(is_scheduled[s]):
+                unplaced_count += 1
+                continue
+                
             d  = solver.Value(day_var[s])
             vp = solver.Value(vp_var[s])
             p  = valid_periods[vp]   # actual 0-based period index
@@ -478,7 +520,7 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
             "warnings":     [],
             "stats": {
                 "total_assignments":  len(assignments),
-                "unplaced_sessions":  0,
+                "unplaced_sessions":  unplaced_count,
                 "classes":            len(classes),
                 "subjects":           len(subjects),
                 "teachers":           len(teachers),
@@ -489,8 +531,8 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
             },
         }
     else:
-        logger.warning(f"CP-SAT: {solver.StatusName(status)} — falling back to Greedy.")
-        return _greedy_solve(problem)
+        logger.warning(f"CP-SAT failed completely: {solver.StatusName(status)}")
+        return _empty_result(problem, time_slots, working_days, "CP-SAT")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -525,8 +567,6 @@ def _greedy_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
     teacher_can: List[Any] = []
     for t in teachers:
         can = {subj_idx[c] for c in t.get("subjects", []) if c in subj_idx}
-        if not can:
-            can = set(range(len(subjects)))
         teacher_can.append(can)
 
     teacher_busy:   Dict[Tuple, bool] = {}

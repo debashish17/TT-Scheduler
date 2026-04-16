@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { FaArrowRight, FaArrowLeft, FaPlus, FaTrash } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 
-const steps = ['Institution', 'Batches', 'Subjects', 'Schedule', 'Rooms', 'Rules', 'Generate'];
+const steps = ['Institution', 'Batches', 'Subjects', 'Teachers', 'Schedule', 'Rooms', 'Rules', 'Generate'];
 
 const ProgressBar = ({ current, total, steps: stepLabels }) => (
   <div className="mb-8">
@@ -55,7 +55,7 @@ const BatchSetup = () => {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-white rounded-2xl shadow-lg p-8">
-        <ProgressBar current={2} total={7} steps={steps} />
+        <ProgressBar current={2} total={8} steps={steps} />
 
         <h2 className="text-2xl font-bold text-gray-800 mb-1">Batches & Classes</h2>
         <p className="text-gray-500 mb-6">Define the student batches (classes) that need timetables and their total strength.</p>

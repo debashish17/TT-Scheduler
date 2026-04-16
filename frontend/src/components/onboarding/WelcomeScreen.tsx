@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { FaGraduationCap, FaArrowRight, FaPlus, FaTrash, FaHistory } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 
-const steps = ['Institution', 'Batches', 'Subjects', 'Schedule', 'Rooms', 'Rules', 'Generate'];
+const steps = ['Institution', 'Batches', 'Subjects', 'Teachers', 'Schedule', 'Rooms', 'Rules', 'Generate'];
 
 const ProgressBar = ({ current, total, steps: stepLabels }) => (
   <div className="mb-8">
@@ -26,7 +26,7 @@ const ProgressBar = ({ current, total, steps: stepLabels }) => (
 
 const WelcomeScreen = () => {
   const navigate = useNavigate();
-  const { setInstitutionData, setTeachersData } = useOnboardingStore();
+  const { setInstitutionData } = useOnboardingStore();
 
   const [formData, setFormData] = useState({
     institutionName: '',
@@ -36,19 +36,7 @@ const WelcomeScreen = () => {
     email: '',
   });
 
-  const [teachers, setTeachers] = useState([
-    { name: '', subjects: '' },
-  ]);
-
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
-
-  const addTeacher = () => setTeachers([...teachers, { name: '', subjects: '' }]);
-  const removeTeacher = (i) => setTeachers(teachers.filter((_, idx) => idx !== i));
-  const updateTeacher = (i, field, value) => {
-    const updated = [...teachers];
-    updated[i][field] = value;
-    setTeachers(updated);
-  };
 
   const handleNext = () => {
     setInstitutionData({
@@ -58,15 +46,6 @@ const WelcomeScreen = () => {
       country: formData.country,
       email: formData.email,
     });
-
-    // Parse teachers: subjects field is comma-separated codes
-    const parsedTeachers = teachers
-      .filter(t => t.name.trim())
-      .map(t => ({
-        name: t.name.trim(),
-        subjects: t.subjects.split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
-      }));
-    setTeachersData(parsedTeachers);
 
     navigate('/screen-2');
   };
@@ -93,7 +72,7 @@ const WelcomeScreen = () => {
           </button>
         </div>
 
-        <ProgressBar current={1} total={7} steps={steps} />
+        <ProgressBar current={1} total={8} steps={steps} />
 
         <div className="space-y-6">
           {/* Institution Info */}
@@ -128,43 +107,6 @@ const WelcomeScreen = () => {
                   placeholder="admin@school.edu"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
               </div>
-            </div>
-          </div>
-
-          {/* Teachers */}
-          <div>
-            <h2 className="text-xl font-semibold text-gray-800 mb-1">Teachers <span className="text-sm font-normal text-gray-500">(optional — can add more later)</span></h2>
-            <p className="text-sm text-gray-500 mb-4">Add teachers and which subjects they can teach. Leave subjects blank = can teach all.</p>
-
-            <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-              <div className="grid grid-cols-12 gap-3 text-xs font-medium text-gray-500 uppercase">
-                <div className="col-span-5">Teacher Name</div>
-                <div className="col-span-6">Subjects They Teach (codes, comma-separated)</div>
-                <div className="col-span-1"></div>
-              </div>
-              {teachers.map((teacher, i) => (
-                <div key={i} className="grid grid-cols-12 gap-3">
-                  <div className="col-span-5">
-                    <input type="text" value={teacher.name} onChange={e => updateTeacher(i, 'name', e.target.value)}
-                      placeholder="Mr. Smith"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div className="col-span-6">
-                    <input type="text" value={teacher.subjects} onChange={e => updateTeacher(i, 'subjects', e.target.value)}
-                      placeholder="MATH, SCI, ENG"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div className="col-span-1 flex items-center justify-center">
-                    <button onClick={() => removeTeacher(i)} className="text-red-400 hover:text-red-600">
-                      <FaTrash size={12} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-              <button onClick={addTeacher} className="flex items-center space-x-2 text-blue-600 hover:text-blue-700 text-sm font-medium mt-2">
-                <FaPlus size={12} />
-                <span>Add Teacher</span>
-              </button>
             </div>
           </div>
         </div>

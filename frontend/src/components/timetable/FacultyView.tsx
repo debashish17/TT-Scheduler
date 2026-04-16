@@ -42,27 +42,27 @@ const FacultyView = () => {
     );
   }
 
-  const { assignments = [], working_days = [], time_slots = [], stats = {} } = generatedTimetable;
+  const { assignments = [], working_days = [], time_slots = [], stats = {} }: any = generatedTimetable;
 
-  const teachers = [...new Set(assignments.map(a => a.teacher_name))].sort();
-  const allSubjects = [...new Set(assignments.map(a => a.subject_code))];
-  const subjectColors = {};
-  allSubjects.forEach((code, i) => { subjectColors[code] = COLORS[i % COLORS.length]; });
+  const teachers: string[] = [...new Set(assignments.map((a: any) => a.teacher_name))].sort() as string[];
+  const allSubjects: string[] = [...new Set(assignments.map((a: any) => a.subject_code))] as string[];
+  const subjectColors: Record<string, string> = {};
+  allSubjects.forEach((code: string, i: number) => { subjectColors[code] = COLORS[i % COLORS.length]; });
 
-  const [selectedTeacher, setSelectedTeacher] = useState(teachers[0] || '');
+  const [selectedTeacher, setSelectedTeacher] = useState<string>(teachers[0] || '');
 
-  const teacherAssignments = assignments.filter(a => a.teacher_name === selectedTeacher);
-  const grid = {};
-  working_days.forEach(day => { grid[day] = {}; });
-  teacherAssignments.forEach(a => {
+  const teacherAssignments: any[] = assignments.filter((a: any) => a.teacher_name === selectedTeacher);
+  const grid: Record<string, any> = {};
+  working_days.forEach((day: string) => { grid[day] = {}; });
+  teacherAssignments.forEach((a: any) => {
     if (!grid[a.day]) grid[a.day] = {};
     grid[a.day][a.period] = a;
   });
 
-  const periods = time_slots.map((s, i) => ({ period: i + 1, ...s }));
+  const periods: any[] = time_slots.map((s: any, i: number) => ({ period: i + 1, ...s }));
   const totalPeriodsThisWeek = teacherAssignments.length;
-  const subjectsTaught = [...new Set(teacherAssignments.map(a => a.subject_code))];
-  const classesTaught = [...new Set(teacherAssignments.map(a => a.class_name))];
+  const subjectsTaught: string[] = [...new Set(teacherAssignments.map((a: any) => a.subject_code))] as string[];
+  const classesTaught: string[] = [...new Set(teacherAssignments.map((a: any) => a.class_name))] as string[];
 
   const handleExportExcel = async () => {
     setExporting(true);

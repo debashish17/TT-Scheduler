@@ -6,6 +6,7 @@ import { FaArrowRight, FaArrowLeft, FaPlus, FaUpload } from 'react-icons/fa';
 const SlotDefinition = () => {
   const navigate = useNavigate();
   const [useSlots, setUseSlots] = useState('no'); // Default to simple time slots for school implementation
+  const [slotConfig, setSlotConfig] = useState({ theoryGroups: 5, variantsPerGroup: 2 });
 
   const steps = ['Institution', 'Workflow', 'Subjects', 'Time', 'Slots', 'Rooms', 'Rules'];
 

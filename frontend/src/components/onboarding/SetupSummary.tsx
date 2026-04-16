@@ -524,7 +524,7 @@ const SetupSummary = () => {
 
       // Auto-save timetable row (non-blocking)
       try {
-        await simpleTimetableAPI.saveTimetable({
+        simpleTimetableAPI.saveTimetable({
           institution_name: request.institution_name,
           name: `${request.institution_name} Timetable`,
           solver: timetableData.solver || 'CP-SAT',
@@ -541,7 +541,7 @@ const SetupSummary = () => {
 
       // Save full snapshot — all inputs + solver result — per authenticated user
       try {
-        await snapshotsAPI.save({
+        snapshotsAPI.save({
           institution_name:  request.institution_name,
           institution_data:  institutionData    || {},
           classes_data:      classesData        || [],
@@ -591,14 +591,14 @@ const SetupSummary = () => {
 
   // ── Open manual-resolve modal ──────────────────────────────────
   const handleOpenAutoResolve = () => {
-    const fixes = analyzeWarnings(
-      solverWarnings,
-      teachersData, roomsData, subjectsData, classesData, timeData,
-      setTeachersData, setRoomsData, setSubjectsData, setTimeData,
-    );
-    setResolveOptions(fixes);
-    setSelectedFixIndex(0);
-    setAiSolveLog([]);
+    // Generate the preview so the user knows exactly what we will do
+    const result = computeAllFixes(solverWarnings, {
+      teachers: teachersData || [],
+      rooms:    roomsData    || [],
+      subjects: subjectsData || [],
+      timeData: timeData     || {},
+    });
+    setAiSolveLog(result.log);
     setShowResolveModal(true);
   };
 
@@ -813,7 +813,7 @@ const SetupSummary = () => {
         {/* Back button */}
         <div className="flex justify-start mt-8 pt-6 border-t border-gray-200">
           <button
-            onClick={() => navigate('/screen-6')}
+            onClick={() => navigate('/screen-7')}
             className="flex items-center space-x-2 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-sm"
           >
             <FaArrowLeft size={12} />
@@ -822,18 +822,15 @@ const SetupSummary = () => {
         </div>
       </div>
 
-      {/* ── Auto Resolve Modal ────────────────────────────────────── */}
+      {/* ── Auto Resolve Modal (Batch Review) ───────────────────── */}
       {showResolveModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => { if (!isApplying && !isAiSolving) setShowResolveModal(false); }}
           />
 
-          {/* Modal panel */}
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
-
             {/* Modal header */}
             <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
               <div className="flex items-center gap-3">
@@ -841,9 +838,9 @@ const SetupSummary = () => {
                   <FaMagic className="text-purple-600 text-lg" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">Conflict Resolution</h2>
+                  <h2 className="text-lg font-bold text-gray-900">Batch Auto Resolve</h2>
                   <p className="text-xs text-gray-500">
-                    {resolveOptions.length} fix{resolveOptions.length !== 1 ? 'es' : ''} available
+                    {aiSolveLog.length} automatic fix{aiSolveLog.length !== 1 ? 'es' : ''} proposed
                   </p>
                 </div>
               </div>
@@ -858,135 +855,66 @@ const SetupSummary = () => {
 
             {/* Scrollable body */}
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-
-              {/* ── AI Solve card ─────────────────────────────────── */}
-              <div className="rounded-2xl border-2 border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50 p-4">
+              <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4">
                 <div className="flex items-start gap-3 mb-3">
                   <div className="w-9 h-9 bg-purple-600 rounded-xl flex items-center justify-center shrink-0">
                     <FaRobot className="text-white text-base" />
                   </div>
                   <div>
-                    <p className="font-bold text-purple-900 text-sm">AI Solve All</p>
+                    <p className="font-bold text-purple-900 text-sm">Review Proposed Changes</p>
                     <p className="text-xs text-purple-700 mt-0.5">
-                      Automatically analyzes all {solverWarnings.length} conflict
-                      {solverWarnings.length !== 1 ? 's' : ''} and applies every necessary fix in one go,
-                      then re-generates the timetable.
+                      Applying these generated fixes will resolve the mathematical impossibilities in the current schedule layout, allowing CP-SAT to successfully schedule all classes.
                     </p>
                   </div>
                 </div>
 
-                {/* AI log (shown while solving) */}
-                {aiSolveLog.length > 0 && (
-                  <div className="mb-3 bg-white/60 rounded-xl px-3 py-2 space-y-1">
+                {aiSolveLog.length === 0 ? (
+                   <p className="text-sm text-gray-600 my-4 text-center">No auto fixes identified.</p>
+                ) : (
+                  <div className="bg-white rounded-xl divide-y divide-gray-100 shadow-sm border border-purple-100 mt-4 overflow-hidden">
                     {aiSolveLog.map((line, i) => (
-                      <p key={i} className="text-xs text-purple-800 font-mono">{line}</p>
+                      <div key={i} className="p-3 flex gap-3 text-sm text-gray-700">
+                         <div className="mt-0.5 shrink-0 flex items-center justify-center w-5 h-5 bg-green-100 rounded-full">
+                           <FaCheckCircle className="text-green-600 text-xs" />
+                         </div>
+                         <p>{line.replace('✔', '').trim()}</p>
+                      </div>
                     ))}
                   </div>
                 )}
-
-                <button
-                  onClick={handleAiSolve}
-                  disabled={isAiSolving || isApplying}
-                  className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                    isAiSolving || isApplying
-                      ? 'bg-purple-300 text-white cursor-not-allowed'
-                      : 'bg-purple-600 text-white hover:bg-purple-700 shadow-md hover:shadow-purple-300'
-                  }`}
-                >
-                  {isAiSolving ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      AI is analyzing &amp; applying fixes...
-                    </>
-                  ) : (
-                    <>
-                      <FaRobot />
-                      ✨ AI Solve All ({resolveOptions.length} fix{resolveOptions.length !== 1 ? 'es' : ''})
-                    </>
-                  )}
-                </button>
               </div>
-
-              {/* Divider */}
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-gray-200" />
-                <span className="text-xs text-gray-400 font-medium">or apply a single fix manually</span>
-                <div className="flex-1 h-px bg-gray-200" />
-              </div>
-
-              {/* ── Manual options ────────────────────────────────── */}
-              {resolveOptions.length === 0 ? (
-                <div className="text-center py-6 text-gray-500">
-                  <FaLightbulb className="text-3xl mx-auto mb-3 text-gray-300" />
-                  <p className="font-medium">No automatic fixes available</p>
-                  <p className="text-sm mt-1">Please review the warnings above and fix inputs manually.</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {resolveOptions.map((fix, i) => (
-                    <label
-                      key={fix.id}
-                      className={`block cursor-pointer rounded-xl border-2 p-3.5 transition-all ${
-                        selectedFixIndex === i
-                          ? 'border-purple-400 bg-purple-50'
-                          : 'border-gray-200 bg-gray-50 hover:border-purple-200 hover:bg-purple-50/40'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <input
-                          type="radio"
-                          name="fix"
-                          checked={selectedFixIndex === i}
-                          onChange={() => setSelectedFixIndex(i)}
-                          className="mt-1 accent-purple-600"
-                          disabled={isApplying || isAiSolving}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-800 text-sm">{fix.label}</p>
-                          <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{fix.description}</p>
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              )}
             </div>
 
-            {/* Modal footer — manual apply */}
-            {resolveOptions.length > 0 && (
-              <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
-                <button
-                  onClick={() => setShowResolveModal(false)}
-                  disabled={isApplying || isAiSolving}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleApplyFix}
-                  disabled={isApplying || isAiSolving}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-800 text-white rounded-xl hover:bg-gray-900 transition-colors text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isApplying ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      Applying...
-                    </>
-                  ) : (
-                    <>
-                      <FaMagic />
-                      Apply Selected Fix
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
+            {/* Modal footer */}
+            <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+              <button
+                onClick={() => setShowResolveModal(false)}
+                disabled={isApplying || isAiSolving}
+                className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAiSolve}
+                disabled={aiSolveLog.length === 0 || isApplying || isAiSolving}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all bg-purple-600 text-white hover:bg-purple-700 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isAiSolving ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Applying...
+                  </>
+                ) : (
+                  <>
+                    <FaMagic />
+                    Accept & Apply All
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

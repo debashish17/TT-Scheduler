@@ -157,7 +157,7 @@ export const useJobStore = create<any>()((set, get) => ({
 /**
  * Timetable Store
  */
-export const useTimetableStore = create((set) => ({
+export const useTimetableStore = create<any>()((set: any) => ({
   currentTimetable: null,
   timetables: [],
   generationSettings: {
@@ -236,7 +236,7 @@ export const useUIStore = create<any>()((set) => ({
 /**
  * Faculty Store
  */
-export const useFacultyStore = create((set) => ({
+export const useFacultyStore = create<any>()((set: any) => ({
   faculty: [],
   selectedFaculty: null,
 
@@ -268,7 +268,7 @@ export const useFacultyStore = create((set) => ({
 /**
  * Course Store
  */
-export const useCourseStore = create((set) => ({
+export const useCourseStore = create<any>()((set) => ({
   courses: [],
   selectedCourse: null,
 
@@ -300,7 +300,7 @@ export const useCourseStore = create((set) => ({
 /**
  * Room Store
  */
-export const useRoomStore = create((set) => ({
+export const useRoomStore = create<any>()((set: any) => ({
   rooms: [],
   selectedRoom: null,
 

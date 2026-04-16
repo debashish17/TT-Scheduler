@@ -16,7 +16,7 @@ const NAV_TABS = [
 ];
 
 // Mini bar for visualising a % or count quickly
-const MiniBar = ({ value, max, color = 'bg-blue-500' }) => {
+const MiniBar = ({ value, max, color = 'bg-blue-500' }: { value: number, max: number, color?: string }) => {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   return (
     <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
@@ -25,7 +25,7 @@ const MiniBar = ({ value, max, color = 'bg-blue-500' }) => {
   );
 };
 
-const StatCard = ({ icon, label, value, sub, color = 'text-blue-600', bg = 'bg-blue-50' }) => (
+const StatCard = ({ icon, label, value, sub, color = 'text-blue-600', bg = 'bg-blue-50' }: { icon: React.ReactNode, label: React.ReactNode, value: React.ReactNode, sub?: React.ReactNode, color?: string, bg?: string }) => (
   <div className={`${bg} rounded-2xl p-5 flex items-start gap-4`}>
     <div className={`text-2xl ${color} mt-0.5`}>{icon}</div>
     <div>
@@ -307,10 +307,10 @@ const AnalyticsView = () => {
 function computeLocalAnalytics(timetable) {
   const { assignments = [], working_days = [], time_slots = [], stats = {}, solver = 'CP-SAT', status = 'FEASIBLE', solve_time = 0 } = timetable;
 
-  const teacherMap = {};
-  const subjMap = {};
-  const roomMap = {};
-  const dayMap = {};
+  const teacherMap: Record<string, { periods_per_week: number, subjects: Set<string>, classes: Set<string> }> = {};
+  const subjMap: Record<string, { name: string, total: number, classes: Set<string> }> = {};
+  const roomMap: Record<string, number> = {};
+  const dayMap: Record<string, number> = {};
 
   for (const a of assignments) {
     // Teacher

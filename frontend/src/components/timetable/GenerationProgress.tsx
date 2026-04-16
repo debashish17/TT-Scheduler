@@ -54,11 +54,59 @@ const GenerationProgress = () => {
     if (!jobId) return;
 
     const generationMode = localStorage.getItem('generation_mode') || 'offline';
-    let intervalId;
-    let elapsedIntervalId;
+    let intervalId: any;
+    let elapsedIntervalId: any;
+
+    const simulateOfflineProgress = () => {
+      let step = 0;
+      const totalSteps = 8;
+      const stepDuration = (settings?.maxTime || 5) * 60 * 1000 / totalSteps;
+
+      const progressInterval = setInterval(() => {
+        step++;
+        const progressPercentage = Math.min((step / totalSteps) * 100, 100);
+        const stepMessages = [
+          'Loading school configuration...',
+          'Validating subjects and classrooms...',
+          'Building constraint model...',
+          'Running CP-SAT optimization...',
+          'Generating solution 1...',
+          'Generating solution 2...',
+          'Generating solution 3...',
+          'Quality analysis and comparison...'
+        ];
+
+        setJobStatus((prev: any) => ({
+          ...prev,
+          progress_percentage: progressPercentage,
+          current_step: stepMessages[step - 1] || 'Completing generation...',
+          steps_completed: step,
+          status: step >= totalSteps ? 'completed' : 'generating'
+        }));
+
+        if (step >= totalSteps) {
+          clearInterval(progressInterval);
+          const storedRequest = JSON.parse(localStorage.getItem('generation_request') || '{}');
+          const mockResult = {
+            success: true,
+            generation_time: elapsedTime,
+            solutions_count: settings?.numSolutions || 3,
+            best_solution: {
+              assignments: Math.floor(Math.random() * 20) + (storedRequest.subject_count * 4 || 20),
+              conflicts: Math.floor(Math.random() * 3),
+              utilization: Math.floor(Math.random() * 15) + 80
+            },
+            school_name: storedRequest.institution_name || 'Your School',
+            offline_mode: true
+          };
+          localStorage.setItem('generation_result', JSON.stringify(mockResult));
+          setTimeout(() => navigate('/screen-11'), 2000);
+        }
+      }, stepDuration);
+      return progressInterval;
+    };
 
     if (generationMode === 'online') {
-      // Online mode - poll backend
       const pollJobStatus = async () => {
         try {
           const response = await jobsAPI.getStatus(jobId);
@@ -71,86 +119,23 @@ const GenerationProgress = () => {
             completeJob(jobId, status.result);
             localStorage.setItem('generation_result', JSON.stringify(status.result));
             setTimeout(() => navigate('/screen-11'), 2000);
-            clearInterval(intervalId);
-            clearInterval(elapsedIntervalId);
+            if (intervalId) clearInterval(intervalId);
+            if (elapsedIntervalId) clearInterval(elapsedIntervalId);
           } else if (status.status === 'failed') {
             failJob(jobId, status.error_message);
             setError(status.error_message || 'Generation failed');
-            clearInterval(intervalId);
-            clearInterval(elapsedIntervalId);
+            if (intervalId) clearInterval(intervalId);
+            if (elapsedIntervalId) clearInterval(elapsedIntervalId);
           }
         } catch (error) {
           console.error('Failed to poll job status:', error);
-          // Fallback to offline simulation
-          simulateOfflineProgress();
+          if (intervalId) clearInterval(intervalId);
+          intervalId = simulateOfflineProgress();
         }
       };
 
       intervalId = setInterval(pollJobStatus, 2000);
     } else {
-      // Offline mode - simulate progress
-      const simulateOfflineProgress = () => {
-        let step = 0;
-        const totalSteps = 8;
-        const stepDuration = (settings?.maxTime || 5) * 60 * 1000 / totalSteps; // Distribute time across steps
-
-        const progressInterval = setInterval(() => {
-          step++;
-          const progressPercentage = Math.min((step / totalSteps) * 100, 100);
-
-          const stepMessages = [
-            'Loading school configuration...',
-            'Validating subjects and classrooms...',
-            'Building constraint model...',
-            'Running CP-SAT optimization...',
-            'Generating solution 1...',
-            'Generating solution 2...',
-            'Generating solution 3...',
-            'Quality analysis and comparison...'
-          ];
-
-          setJobStatus(prev => ({
-            ...prev,
-            progress_percentage: progressPercentage,
-            current_step: stepMessages[step - 1] || 'Completing generation...',
-            steps_completed: step,
-            status: step >= totalSteps ? 'completed' : 'generating'
-          }));
-
-          if (step >= totalSteps) {
-            clearInterval(progressInterval);
-
-            // Create mock result with realistic school data
-            const storedRequest = JSON.parse(localStorage.getItem('generation_request') || '{}');
-            const mockResult = {
-              success: true,
-              generation_time: elapsedTime,
-              solutions_count: settings?.numSolutions || 3,
-              best_solution: {
-                assignments: Math.floor(Math.random() * 20) + (storedRequest.subject_count * 4 || 20),
-                conflicts: Math.floor(Math.random() * 3),
-                utilization: Math.floor(Math.random() * 15) + 80 // 80-95% utilization
-              },
-              school_name: storedRequest.institution_name || 'Your School',
-              offline_mode: true
-            };
-
-            localStorage.setItem('generation_result', JSON.stringify(mockResult));
-
-            console.log('🎉 Offline generation complete!', {
-              school: mockResult.school_name,
-              solutions: mockResult.solutions_count,
-              assignments: mockResult.best_solution.assignments,
-              utilization: `${mockResult.best_solution.utilization}%`
-            });
-
-            setTimeout(() => navigate('/screen-11'), 2000);
-          }
-        }, stepDuration);
-
-        return progressInterval;
-      };
-
       intervalId = simulateOfflineProgress();
     }
 

@@ -42,27 +42,27 @@ const StudentView = () => {
     );
   }
 
-  const { assignments = [], working_days = [], time_slots = [], stats = {} } = generatedTimetable;
+  const { assignments = [], working_days = [], time_slots = [], stats = {} }: any = generatedTimetable;
 
-  const classes = [...new Set(assignments.map(a => a.class_name))].sort();
-  const allSubjects = [...new Set(assignments.map(a => a.subject_code))];
-  const subjectColors = {};
-  allSubjects.forEach((code, i) => { subjectColors[code] = COLORS[i % COLORS.length]; });
+  const classes: string[] = [...new Set(assignments.map((a: any) => a.class_name))].sort() as string[];
+  const allSubjects: string[] = [...new Set(assignments.map((a: any) => a.subject_code))] as string[];
+  const subjectColors: Record<string, string> = {};
+  allSubjects.forEach((code: string, i: number) => { subjectColors[code] = COLORS[i % COLORS.length]; });
 
-  const [selectedClass, setSelectedClass] = useState(classes[0] || '');
+  const [selectedClass, setSelectedClass] = useState<string>(classes[0] || '');
 
-  const classAssignments = assignments.filter(a => a.class_name === selectedClass);
-  const grid = {};
-  working_days.forEach(day => { grid[day] = {}; });
-  classAssignments.forEach(a => {
+  const classAssignments: any[] = assignments.filter((a: any) => a.class_name === selectedClass);
+  const grid: Record<string, any> = {};
+  working_days.forEach((day: string) => { grid[day] = {}; });
+  classAssignments.forEach((a: any) => {
     if (!grid[a.day]) grid[a.day] = {};
     grid[a.day][a.period] = a;
   });
 
-  const periods = time_slots.map((s, i) => ({ period: i + 1, ...s }));
-  const subjectsTaught = [...new Set(classAssignments.map(a => a.subject_code))];
-  const subjectCounts = {};
-  classAssignments.forEach(a => { subjectCounts[a.subject_code] = (subjectCounts[a.subject_code] || 0) + 1; });
+  const periods: any[] = time_slots.map((s: any, i: number) => ({ period: i + 1, ...s }));
+  const subjectsTaught: string[] = [...new Set(classAssignments.map((a: any) => a.subject_code))] as string[];
+  const subjectCounts: Record<string, number> = {};
+  classAssignments.forEach((a: any) => { subjectCounts[a.subject_code] = (subjectCounts[a.subject_code] || 0) + 1; });
 
   const handleExportExcel = async () => {
     setExporting(true);

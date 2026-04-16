@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { FaArrowRight, FaArrowLeft } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
 
-const steps = ['Institution', 'Batches', 'Subjects', 'Schedule', 'Rooms', 'Rules', 'Generate'];
+const steps = ['Institution', 'Batches', 'Subjects', 'Teachers', 'Schedule', 'Rooms', 'Rules', 'Generate'];
 
 const ProgressBar = ({ current, total, steps: stepLabels }) => (
   <div className="mb-8">
@@ -78,7 +78,7 @@ const TimeStructure = () => {
   const handleNext = () => {
     if (data.workingDays.length === 0) { alert('Select at least one working day'); return; }
     setTimeData(data);
-    navigate('/screen-5');
+    navigate('/screen-6');
   };
 
   const preview = generatePreview();
@@ -86,7 +86,7 @@ const TimeStructure = () => {
   return (
     <div className="max-w-5xl mx-auto">
       <div className="bg-white rounded-2xl shadow-lg p-8">
-        <ProgressBar current={4} total={7} steps={steps} />
+        <ProgressBar current={4} total={8} steps={steps} />
 
         <h2 className="text-2xl font-bold text-gray-800 mb-1">Schedule Structure</h2>
         <p className="text-gray-500 mb-6">Define when classes happen and how long each period is.</p>
@@ -198,7 +198,7 @@ const TimeStructure = () => {
         </div>
 
         <div className="flex justify-between mt-8 pt-6 border-t border-gray-200">
-          <button onClick={() => navigate('/screen-3')}
+          <button onClick={() => navigate('/screen-4')}
             className="flex items-center space-x-2 px-5 py-2.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
             <FaArrowLeft />
             <span>Back</span>

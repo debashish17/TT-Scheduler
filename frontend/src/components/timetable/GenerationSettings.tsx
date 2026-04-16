@@ -131,7 +131,7 @@ const GenerationSettings = () => {
         // Check if backend is available with a quick health check
         const healthResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/health`, {
           method: 'GET',
-          timeout: 2000 // 2 second timeout
+          signal: AbortSignal.timeout(2000) // 2 second timeout
         });
 
         if (healthResponse.ok) {
@@ -165,7 +165,7 @@ const GenerationSettings = () => {
       // Navigate to progress screen
       navigate('/screen-10');
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Failed to start timetable generation:', error);
       alert(`Generation failed: ${error.message}\n\nTip: Try the auto-populate script: autoPopulateFull()`);
       setIsGenerating(false);

@@ -361,8 +361,8 @@ export const useLocalStorage = (key, initialValue) => {
  * @param {Function} onSubmit - Submit handler
  * @returns {Object} Form state and handlers
  */
-export const useForm = (initialValues = {}, onSubmit) => {
-  const [values, setValues] = useState(initialValues);
+export const useForm = <T extends Record<string, any>>(initialValues: T, onSubmit: (values: T) => Promise<void> | void) => {
+  const [values, setValues] = useState<T>(initialValues);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
