@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
 import { Btn, Eyebrow, Chip, Dot, Icon, TopBar } from '../ui/primitives';
 import { snapshotsAPI } from '../../api/client';
+import DownloadModal from '../ui/DownloadModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SnapshotSummary {
@@ -16,6 +17,9 @@ interface SnapshotSummary {
   teachers_count?: number;
   rooms_count?: number;
   // full snapshot fields from getLatest
+  classes_data?: any[];
+  teachers_data?: any[];
+  rooms_data?: any[];
   generated_timetable?: {
     stats?: {
       clashes?: number;
@@ -26,7 +30,6 @@ interface SnapshotSummary {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function relativeTime(iso: string): string {
-  // Backend stores UTC without 'Z' — append it so Date parses correctly
   const normalized = iso.endsWith('Z') ? iso : iso + 'Z';
   const diff = Date.now() - new Date(normalized).getTime();
   const mins = Math.floor(diff / 60000);
@@ -49,10 +52,7 @@ const SkeletonRow: React.FC = () => (
   <tr style={{ borderTop: '1px solid var(--line)' }}>
     {[120, 80, 60, 40, 50, 60].map((w, i) => (
       <td key={i} className="py-3 px-5">
-        <div
-          className="rounded animate-pulse"
-          style={{ width: w, height: 14, background: 'var(--paper-2)' }}
-        />
+        <div className="rounded animate-pulse" style={{ width: w, height: 14, background: 'var(--paper-2)' }} />
       </td>
     ))}
   </tr>
@@ -116,14 +116,11 @@ const MiniGrid: React.FC = () => (
 const EmptyRuns: React.FC<{ onNew: () => void }> = ({ onNew }) => (
   <tr>
     <td colSpan={6} className="py-16 px-5 text-center">
-      <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4"
-        style={{ background: 'var(--paper-2)' }}>
+      <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4" style={{ background: 'var(--paper-2)' }}>
         <Icon name="grid" size={20} style={{ color: 'var(--ink-3)' } as React.CSSProperties} />
       </div>
       <p className="font-medium mb-1">No timetable runs yet</p>
-      <p className="text-sm mb-4" style={{ color: 'var(--ink-3)' }}>
-        Generate your first timetable to see it here.
-      </p>
+      <p className="text-sm mb-4" style={{ color: 'var(--ink-3)' }}>Generate your first timetable to see it here.</p>
       <Btn variant="primary" size="sm" onClick={onNew}>
         <Icon name="plus" size={13} /> New run
       </Btn>
@@ -134,13 +131,17 @@ const EmptyRuns: React.FC<{ onNew: () => void }> = ({ onNew }) => (
 // ─── Dashboard page ───────────────────────────────────────────────────────────
 const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const { institutionData } = useOnboardingStore();
+  const { institutionData, generatedTimetable } = useOnboardingStore();
   const [q, setQ] = useState('');
 
   const [latest, setLatest] = useState<SnapshotSummary | null>(null);
   const [history, setHistory] = useState<SnapshotSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+
+  // Download modal state
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [downloadFormat, setDownloadFormat] = useState<'excel' | 'pdf'>('excel');
 
   useEffect(() => {
     let cancelled = false;
@@ -152,17 +153,12 @@ const DashboardPage: React.FC = () => {
       snapshotsAPI.getHistory().catch(() => null),
     ]).then(([latestRes, historyRes]) => {
       if (cancelled) return;
-      // getLatest → { found: bool, snapshot: {...} }
       const snap = latestRes?.data;
       setLatest(snap?.found ? snap.snapshot : null);
-      // getHistory → { snapshots: [...] }
       setHistory(historyRes?.data?.snapshots ?? []);
       setLoading(false);
     }).catch(() => {
-      if (!cancelled) {
-        setError(true);
-        setLoading(false);
-      }
+      if (!cancelled) { setError(true); setLoading(false); }
     });
 
     return () => { cancelled = true; };
@@ -180,6 +176,22 @@ const DashboardPage: React.FC = () => {
     ?? (latest?.solve_time != null ? parseFloat(String(latest.solve_time)) : undefined);
   const latestSolve = formatSolveTime(latestSolveRaw);
   const latestWhen = latest ? relativeTime(latest.created_at) : null;
+
+  // Real stats from latest snapshot
+  const latestStudents = latest?.classes_data
+    ? latest.classes_data.reduce((sum: number, c: any) => sum + (parseInt(c.size) || 30), 0)
+    : null;
+  const latestFaculty = latest?.teachers_data?.length ?? null;
+  const latestRooms   = latest?.rooms_data?.length ?? null;
+  const latestClasses = latest?.classes_data?.length ?? null;
+
+  // Active timetable data (for download modal)
+  const activeTimetable = generatedTimetable ?? latest?.generated_timetable ?? null;
+
+  const openDownload = (fmt: 'excel' | 'pdf') => {
+    setDownloadFormat(fmt);
+    setShowDownloadModal(true);
+  };
 
   return (
     <div className="screen-enter">
@@ -199,7 +211,7 @@ const DashboardPage: React.FC = () => {
       />
 
       <div className="p-8 max-w-[1400px] mx-auto">
-        {/* Hero strip — active timetable + preview */}
+        {/* Hero strip */}
         <div className="grid grid-cols-12 gap-4 mb-8">
           <div className="col-span-12 md:col-span-7 edge rounded-xl p-6" style={{ background: 'var(--paper)' }}>
             {latest ? (
@@ -238,11 +250,17 @@ const DashboardPage: React.FC = () => {
               <Btn variant="brand" size="sm" onClick={() => navigate(latest ? '/timetable' : '/wizard')}>
                 <Icon name="grid" size={13} /> {latest ? 'Open timetable' : 'Create timetable'}
               </Btn>
-              {latest && (
+              {latest && activeTimetable && (
                 <>
-                  <Btn variant="ghost" size="sm"><Icon name="dl" size={13} /> Excel</Btn>
-                  <Btn variant="ghost" size="sm"><Icon name="file" size={13} /> PDF</Btn>
-                  <Btn variant="ghost" size="sm"><Icon name="spark" size={13} /> Compare versions</Btn>
+                  <Btn variant="ghost" size="sm" onClick={() => openDownload('excel')}>
+                    <Icon name="dl" size={13} /> Excel
+                  </Btn>
+                  <Btn variant="ghost" size="sm" onClick={() => openDownload('pdf')}>
+                    <Icon name="file" size={13} /> PDF
+                  </Btn>
+                  <Btn variant="ghost" size="sm">
+                    <Icon name="spark" size={13} /> Compare versions
+                  </Btn>
                 </>
               )}
             </div>
@@ -283,13 +301,29 @@ const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Stats strip */}
+        {/* Stats strip — real values from latest snapshot */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-0 edge rounded-xl overflow-hidden mb-10" style={{ background: 'var(--paper)' }}>
           {[
-            { label: 'Active students', v: '1,240', d: '+46 this term' },
-            { label: 'Faculty',         v: '84',    d: '6 over-loaded' },
-            { label: 'Rooms',           v: '32',    d: '8 labs' },
-            { label: 'Avg. solve time', v: latestSolve !== '—' ? latestSolve : '—', d: 'latest run' },
+            {
+              label: 'Active students',
+              v: latestStudents != null ? latestStudents.toLocaleString() : '—',
+              d: latestClasses != null ? `${latestClasses} class${latestClasses !== 1 ? 'es' : ''}` : 'no data yet',
+            },
+            {
+              label: 'Faculty',
+              v: latestFaculty != null ? String(latestFaculty) : '—',
+              d: 'from latest run',
+            },
+            {
+              label: 'Rooms',
+              v: latestRooms != null ? String(latestRooms) : '—',
+              d: 'from latest run',
+            },
+            {
+              label: 'Avg. solve time',
+              v: latestSolve !== '—' ? latestSolve : '—',
+              d: 'latest run',
+            },
           ].map((s, i) => (
             <div key={s.label} className="p-5" style={{ borderRight: i < 3 ? '1px solid var(--line)' : undefined }}>
               <div className="eyebrow mb-2" style={{ color: 'var(--ink-3)' }}>{s.label}</div>
@@ -342,9 +376,7 @@ const DashboardPage: React.FC = () => {
                   filtered.map((r, idx) => {
                     const clashes = r.generated_timetable?.stats?.clashes ?? 0;
                     const solveRaw = r.solve_time ?? r.generated_timetable?.stats?.solve_time_seconds;
-                    const solve = solveRaw != null
-                      ? formatSolveTime(parseFloat(String(solveRaw)))
-                      : '—';
+                    const solve = solveRaw != null ? formatSolveTime(parseFloat(String(solveRaw))) : '—';
                     const isLatest = idx === 0 && !q;
                     return (
                       <tr
@@ -383,6 +415,16 @@ const DashboardPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Download modal */}
+      {showDownloadModal && activeTimetable && (
+        <DownloadModal
+          format={downloadFormat}
+          onClose={() => setShowDownloadModal(false)}
+          timetableData={activeTimetable}
+          institutionName={inst}
+        />
+      )}
     </div>
   );
 };

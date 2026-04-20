@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
-import { simpleTimetableAPI } from '../../api/client';
 import { Btn, Eyebrow, Chip, Icon, TopBar } from '../ui/primitives';
 import toast from 'react-hot-toast';
+import DownloadModal from '../ui/DownloadModal';
 
 const PALETTE = [
   '#0369A1', '#0F766E', '#7C3AED', '#B45309',
@@ -25,6 +25,13 @@ const FacultyView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [editingTeacher, setEditingTeacher] = useState<{ old: string } | null>(null);
   const [editName, setEditName] = useState('');
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [downloadFormat, setDownloadFormat]   = useState<'excel' | 'pdf'>('excel');
+
+  const openDownload = (fmt: 'excel' | 'pdf') => {
+    setDownloadFormat(fmt);
+    setShowDownloadModal(true);
+  };
 
   if (!generatedTimetable) {
     return (
@@ -65,22 +72,6 @@ const FacultyView: React.FC = () => {
     toast.success(`Renamed to ${newName}`);
   };
 
-  const handleExportExcel = async () => {
-    setExporting(true);
-    const tid = toast.loading('Generating Excel…');
-    try {
-      const res = await simpleTimetableAPI.exportExcel({
-        institution_name: institutionData?.name || 'Timetable',
-        assignments, working_days, time_slots, stats,
-      });
-      const url = URL.createObjectURL(res.data);
-      const a = document.createElement('a');
-      a.href = url; a.download = `${(institutionData?.name || 'Timetable').replace(/ /g, '_')}_Faculty.xlsx`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Downloaded!', { id: tid });
-    } catch { toast.error('Export failed', { id: tid }); } finally { setExporting(false); }
-  };
 
   return (
     <div className="screen-enter">
@@ -89,11 +80,11 @@ const FacultyView: React.FC = () => {
         crumbs={[institutionData?.name || 'School', 'Faculty view']}
         actions={
           <>
-            <Btn variant="ghost" size="sm" onClick={handleExportExcel} disabled={exporting}>
-              <Icon name="dl" size={13} /> {exporting ? 'Exporting…' : 'Excel'}
+            <Btn variant="ghost" size="sm" onClick={() => openDownload('excel')}>
+              <Icon name="dl" size={13} /> Excel
             </Btn>
-            <Btn variant="ghost" size="sm" onClick={() => window.print()}>
-              <Icon name="file" size={13} /> Print
+            <Btn variant="ghost" size="sm" onClick={() => openDownload('pdf')}>
+              <Icon name="file" size={13} /> PDF
             </Btn>
           </>
         }
@@ -277,7 +268,15 @@ const FacultyView: React.FC = () => {
         )}
       </div>
 
-      <style>{`@media print { body*{visibility:hidden} .screen-enter,.screen-enter *{visibility:visible} .screen-enter{position:absolute;left:0;top:0;width:100%} }`}</style>
+      {/* Download modal */}
+      {showDownloadModal && (
+        <DownloadModal
+          format={downloadFormat}
+          onClose={() => setShowDownloadModal(false)}
+          timetableData={generatedTimetable}
+          institutionName={institutionData?.name || 'Timetable'}
+        />
+      )}
     </div>
   );
 };

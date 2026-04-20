@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
 import { simpleTimetableAPI } from '../../api/client';
 import { Btn, Eyebrow, Icon, TopBar } from '../ui/primitives';
-import toast from 'react-hot-toast';
+import DownloadModal from '../ui/DownloadModal';
 
 const NAV = [
   { id: 'timetable',    label: 'Class',     path: '/timetable'    },
@@ -73,7 +73,13 @@ const AnalyticsView: React.FC = () => {
   const { generatedTimetable, institutionData } = useOnboardingStore();
   const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [downloadFormat, setDownloadFormat]   = useState<'excel' | 'pdf'>('excel');
+
+  const openDownload = (fmt: 'excel' | 'pdf') => {
+    setDownloadFormat(fmt);
+    setShowDownloadModal(true);
+  };
 
   useEffect(() => {
     if (!generatedTimetable) return;
@@ -97,18 +103,6 @@ const AnalyticsView: React.FC = () => {
     );
   }
 
-  const handleExportExcel = async () => {
-    setExporting(true);
-    const tid = toast.loading('Generating Excel…');
-    try {
-      const { assignments, working_days, time_slots, stats } = generatedTimetable as any;
-      const res = await simpleTimetableAPI.exportExcel({ institution_name: institutionData?.name || 'Timetable', assignments, working_days, time_slots, stats });
-      const url = URL.createObjectURL(res.data);
-      const a = document.createElement('a'); a.href = url; a.download = `${(institutionData?.name || 'Timetable').replace(/ /g, '_')}.xlsx`;
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-      toast.success('Downloaded!', { id: tid });
-    } catch { toast.error('Export failed', { id: tid }); } finally { setExporting(false); }
-  };
 
   return (
     <div className="screen-enter">
@@ -117,8 +111,11 @@ const AnalyticsView: React.FC = () => {
         crumbs={[institutionData?.name || 'School', 'Analytics']}
         actions={
           <>
-            <Btn variant="ghost" size="sm" onClick={handleExportExcel} disabled={exporting}>
-              <Icon name="dl" size={13} /> {exporting ? 'Exporting…' : 'Excel'}
+            <Btn variant="ghost" size="sm" onClick={() => openDownload('excel')}>
+              <Icon name="dl" size={13} /> Excel
+            </Btn>
+            <Btn variant="ghost" size="sm" onClick={() => openDownload('pdf')}>
+              <Icon name="file" size={13} /> PDF
             </Btn>
           </>
         }
@@ -269,6 +266,16 @@ const AnalyticsView: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* Download modal */}
+      {showDownloadModal && (
+        <DownloadModal
+          format={downloadFormat}
+          onClose={() => setShowDownloadModal(false)}
+          timetableData={generatedTimetable}
+          institutionName={institutionData?.name || 'Timetable'}
+        />
+      )}
     </div>
   );
 };

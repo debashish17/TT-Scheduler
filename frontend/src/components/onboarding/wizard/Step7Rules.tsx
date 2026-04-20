@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { WizardShell } from './WizardShell';
 import { useWizardStore } from './wizardStore';
@@ -198,7 +198,7 @@ const Step7Rules: React.FC = () => {
   const {
     institutionData, classesData, subjectsData, teachersData,
     timeData, roomsData, constraintsData,
-    setGeneratedTimetable, setTimetableError,
+    setGeneratedTimetable, setTimetableError, generatedTimetable,
     setTeachersData, setRoomsData, setSubjectsData, setTimeData,
     setConstraintsData,
   } = useOnboardingStore();
@@ -230,6 +230,13 @@ const Step7Rules: React.FC = () => {
   const [showResolveModal, setShowResolveModal] = useState(false);
   const [aiSolveLog, setAiSolveLog] = useState<string[]>([]);
   const [isAiSolving, setIsAiSolving] = useState(false);
+
+  // Rename-after-auto-resolve state
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [newTeacherNames, setNewTeacherNames] = useState<{ original: string; current: string }[]>([]);
+  const [newRoomNames,    setNewRoomNames]    = useState<{ original: string; current: string }[]>([]);
+  // Ref so runGenerate's closure can read the latest value without stale-capture
+  const pendingRenameRef = useRef<{ teachers: { original: string; current: string }[]; rooms: { original: string; current: string }[] } | null>(null);
 
   const saveConstraints = (patch: { active?: number[]; max_consecutive_periods?: number; max_periods_per_day_per_teacher?: number }) => {
     setConstraintsData({
@@ -376,9 +383,20 @@ const Step7Rules: React.FC = () => {
         setAiSolveLog(result.log);
         setShowResolveModal(true);
       } else {
-        // No warnings, proceed to view
+        // No warnings — check if a rename prompt is pending
         await new Promise((r) => setTimeout(r, 700));
-        navigate('/timetable');
+        if (
+          pendingRenameRef.current &&
+          (pendingRenameRef.current.teachers.length > 0 || pendingRenameRef.current.rooms.length > 0)
+        ) {
+          setNewTeacherNames(pendingRenameRef.current.teachers);
+          setNewRoomNames(pendingRenameRef.current.rooms);
+          pendingRenameRef.current = null;
+          setShowRenameModal(true);
+        } else {
+          pendingRenameRef.current = null;
+          navigate('/timetable');
+        }
       }
 
       // Auto-save (non-blocking)
@@ -452,6 +470,21 @@ const Step7Rules: React.FC = () => {
       setAiSolveLog(result.log);
       await new Promise((r) => setTimeout(r, 900));
 
+      // Detect newly-added teachers / rooms so we can offer renaming later
+      const origTeacherNames = new Set((teachersData || []).map((t: any) => t.name));
+      const origRoomNames    = new Set((roomsData    || []).map((r: any) => r.name));
+      const newTeachers = result.teachers
+        .filter((t: any) => !origTeacherNames.has(t.name))
+        .map   ((t: any) => ({ original: t.name, current: t.name }));
+      const newRooms = result.rooms
+        .filter((r: any) => !origRoomNames.has(r.name))
+        .map   ((r: any) => ({ original: r.name, current: r.name }));
+
+      // Stash in ref so runGenerate's closure can read it after async completes
+      if (newTeachers.length > 0 || newRooms.length > 0) {
+        pendingRenameRef.current = { teachers: newTeachers, rooms: newRooms };
+      }
+
       // Apply fixes to store
       setTeachersData(result.teachers);
       setRoomsData(result.rooms);
@@ -459,8 +492,6 @@ const Step7Rules: React.FC = () => {
       setTimeData(result.timeData);
 
       setShowResolveModal(false);
-      // Pass fixed data directly — store updates are async so we can't rely on
-      // the closure having the new values by the time buildRequest runs
       await runGenerate({
         teachers: result.teachers,
         rooms:    result.rooms,
@@ -702,6 +733,153 @@ const Step7Rules: React.FC = () => {
                 ) : (
                   <><Icon name="spark" size={14} /> Accept &amp; Apply All</>
                 )}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Rename New Resources Modal ── */}
+      {showRenameModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.38)' }} />
+
+          <div className="relative w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden rounded-2xl edge"
+            style={{ background: 'var(--paper)' }}>
+
+            {/* Header */}
+            <div className="flex items-center gap-3 px-6 pt-5 pb-4" style={{ borderBottom: '1px solid var(--line)' }}>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                style={{ background: 'var(--brand-soft)' }}>
+                <Icon name="spark" size={16} style={{ color: 'var(--brand)' } as any} />
+              </div>
+              <div>
+                <h2 className="font-semibold text-[15px]">Rename New Resources</h2>
+                <Eyebrow>Auto-added during conflict resolution</Eyebrow>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              <p className="text-sm" style={{ color: 'var(--ink-3)' }}>
+                These teachers and rooms were created automatically. You can rename them before viewing your timetable.
+              </p>
+
+              {newTeacherNames.length > 0 && (
+                <div>
+                  <Eyebrow className="block mb-3">New teachers</Eyebrow>
+                  <div className="space-y-2">
+                    {newTeacherNames.map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                          style={{ background: 'var(--paper-2)', color: 'var(--ink-3)' }}>
+                          <span className="text-[10px] mono">{i + 1}</span>
+                        </div>
+                        <input
+                          value={item.current}
+                          onChange={e => setNewTeacherNames(prev =>
+                            prev.map((x, j) => j === i ? { ...x, current: e.target.value } : x)
+                          )}
+                          className="flex-1 px-3 py-2 rounded-lg text-sm outline-none"
+                          style={{
+                            background: 'var(--paper)',
+                            border: '1px solid var(--ink)',
+                            color: 'var(--ink)',
+                          }}
+                          placeholder={item.original}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {newRoomNames.length > 0 && (
+                <div>
+                  <Eyebrow className="block mb-3">New rooms</Eyebrow>
+                  <div className="space-y-2">
+                    {newRoomNames.map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                          style={{ background: 'var(--paper-2)', color: 'var(--ink-3)' }}>
+                          <span className="text-[10px] mono">{i + 1}</span>
+                        </div>
+                        <input
+                          value={item.current}
+                          onChange={e => setNewRoomNames(prev =>
+                            prev.map((x, j) => j === i ? { ...x, current: e.target.value } : x)
+                          )}
+                          className="flex-1 px-3 py-2 rounded-lg text-sm outline-none"
+                          style={{
+                            background: 'var(--paper)',
+                            border: '1px solid var(--ink)',
+                            color: 'var(--ink)',
+                          }}
+                          placeholder={item.original}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 flex gap-3" style={{ borderTop: '1px solid var(--line)' }}>
+              <Btn
+                variant="ghost"
+                size="md"
+                className="flex-1 justify-center"
+                onClick={() => {
+                  // Skip rename — navigate with auto-generated names
+                  setShowRenameModal(false);
+                  navigate('/timetable');
+                }}
+              >
+                Skip
+              </Btn>
+              <Btn
+                variant="brand"
+                size="md"
+                className="flex-[2] justify-center"
+                onClick={() => {
+                  // Apply renames to the generated timetable's assignments
+                  const teacherMap: Record<string, string> = {};
+                  newTeacherNames.forEach(({ original, current }) => {
+                    if (current.trim() && current !== original) teacherMap[original] = current.trim();
+                  });
+                  const roomMap: Record<string, string> = {};
+                  newRoomNames.forEach(({ original, current }) => {
+                    if (current.trim() && current !== original) roomMap[original] = current.trim();
+                  });
+
+                  // Update teachersData and roomsData in the store
+                  setTeachersData(
+                    (teachersData || []).map((t: any) =>
+                      teacherMap[t.name] ? { ...t, name: teacherMap[t.name] } : t
+                    )
+                  );
+                  setRoomsData(
+                    (roomsData || []).map((r: any) =>
+                      roomMap[r.name] ? { ...r, name: roomMap[r.name] } : r
+                    )
+                  );
+
+                  // Patch the generated timetable's assignments so the grid shows new names
+                  if (generatedTimetable) {
+                    const patchedAssignments = ((generatedTimetable as any).assignments || []).map((a: any) => ({
+                      ...a,
+                      teacher_name: teacherMap[a.teacher_name] ?? a.teacher_name,
+                      room_name:    roomMap[a.room_name]       ?? a.room_name,
+                    }));
+                    setGeneratedTimetable({ ...(generatedTimetable as any), assignments: patchedAssignments });
+                  }
+
+                  setShowRenameModal(false);
+                  navigate('/timetable');
+                }}
+              >
+                <Icon name="check" size={13} /> Done &amp; View Timetable
               </Btn>
             </div>
           </div>

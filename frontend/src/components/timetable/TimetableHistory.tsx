@@ -53,6 +53,10 @@ const TimetableHistory: React.FC = () => {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [error,     setError]     = useState<string | null>(null);
 
+  // Delete state
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId,      setDeletingId]      = useState<string | null>(null);
+
   const fetchHistory = () => {
     setLoading(true); setError(null);
     snapshotsAPI.getHistory()
@@ -81,6 +85,25 @@ const TimetableHistory: React.FC = () => {
       navigate('/timetable');
     } catch { toast.error('Failed to load snapshot.');
     } finally { setLoadingId(null); }
+  };
+
+  const handleDelete = async (id: string, isLatest: boolean) => {
+    setDeletingId(id);
+    try {
+      await snapshotsAPI.delete(id);
+      // Remove from local state
+      setSnapshots(prev => prev.filter(s => s.id !== id));
+      // If deleting the current active timetable, clear it from the store
+      if (isLatest) {
+        setGeneratedTimetable(null);
+      }
+      setConfirmDeleteId(null);
+      toast.success('Timetable deleted.');
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || 'Delete failed.');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -141,63 +164,106 @@ const TimetableHistory: React.FC = () => {
 
         {!loading && !error && snapshots.length > 0 && (
           <div className="space-y-3">
-            {snapshots.map((snap, idx) => (
-              <div
-                key={snap.id}
-                className="edge rounded-xl p-6 transition-shadow"
-                style={{
-                  background: 'var(--paper)',
-                  boxShadow: idx === 0 ? '0 0 0 1.5px var(--brand)' : undefined,
-                }}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <h3 className="font-semibold truncate">
-                        {snap.institution_name || 'Untitled'}
-                      </h3>
-                      {idx === 0 && <Chip tone="ok"><Dot color="var(--ok)" /> latest</Chip>}
-                      {snap.solver && (
-                        <Chip tone="neutral">{snap.solver}</Chip>
+            {snapshots.map((snap, idx) => {
+              const isLatest   = idx === 0;
+              const isConfirm  = confirmDeleteId === snap.id;
+              const isDeleting = deletingId === snap.id;
+
+              return (
+                <div
+                  key={snap.id}
+                  className="edge rounded-xl p-6 transition-shadow"
+                  style={{
+                    background: 'var(--paper)',
+                    boxShadow: isLatest ? '0 0 0 1.5px var(--brand)' : undefined,
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <h3 className="font-semibold truncate">
+                          {snap.institution_name || 'Untitled'}
+                        </h3>
+                        {isLatest && <Chip tone="ok"><Dot color="var(--ok)" /> latest</Chip>}
+                        {snap.solver && (
+                          <Chip tone="neutral">{snap.solver}</Chip>
+                        )}
+                      </div>
+                      <p className="text-[12px] mono mb-4" style={{ color: 'var(--ink-3)' }}>
+                        {formatDate(snap.created_at)} · {relativeTime(snap.created_at)}
+                      </p>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {[
+                          { label: 'Assignments', v: snap.total_assignments },
+                          { label: 'Solve time',  v: snap.solve_time ? `${parseFloat(snap.solve_time).toFixed(1)}s` : '—' },
+                          { label: 'Subjects',    v: snap.subjects_count },
+                          { label: 'Teachers',    v: snap.teachers_count },
+                          { label: 'Rooms',       v: snap.rooms_count },
+                        ].map(s => (
+                          <div key={s.label} className="rounded-lg p-3 text-center"
+                            style={{ background: 'var(--paper-2)' }}>
+                            <div className="serif text-2xl leading-none mb-1">{s.v}</div>
+                            <div className="text-[10px] mono" style={{ color: 'var(--ink-3)' }}>{s.label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Actions column */}
+                    <div className="flex flex-col gap-2 shrink-0">
+                      <Btn
+                        variant={isLatest ? 'brand' : 'primary'}
+                        size="sm"
+                        disabled={loadingId === snap.id}
+                        onClick={() => handleLoad(snap.id)}
+                      >
+                        {loadingId === snap.id ? 'Loading…' : 'Load'}
+                      </Btn>
+                      <Btn variant="ghost" size="sm" onClick={() => navigate('/analytics')}>
+                        Analytics
+                      </Btn>
+
+                      {/* Delete / Confirm row */}
+                      {!isConfirm ? (
+                        <Btn
+                          variant="ghost"
+                          size="sm"
+                          disabled={isDeleting}
+                          onClick={() => setConfirmDeleteId(snap.id)}
+                        >
+                          <Icon name="x" size={12} /> Delete
+                        </Btn>
+                      ) : (
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[11px] mono text-center" style={{ color: 'var(--err)' }}>
+                            Delete this timetable?
+                          </span>
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={() => handleDelete(snap.id, isLatest)}
+                              disabled={isDeleting}
+                              className="flex-1 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors"
+                              style={{ background: 'var(--err)', color: '#fff', opacity: isDeleting ? 0.6 : 1 }}
+                            >
+                              {isDeleting ? '…' : 'Yes'}
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(null)}
+                              disabled={isDeleting}
+                              className="flex-1 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors"
+                              style={{ background: 'var(--paper-2)', color: 'var(--ink-2)' }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
-                    <p className="text-[12px] mono mb-4" style={{ color: 'var(--ink-3)' }}>
-                      {formatDate(snap.created_at)} · {relativeTime(snap.created_at)}
-                    </p>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                      {[
-                        { label: 'Assignments', v: snap.total_assignments },
-                        { label: 'Solve time',  v: snap.solve_time ? `${parseFloat(snap.solve_time).toFixed(1)}s` : '—' },
-                        { label: 'Subjects',    v: snap.subjects_count },
-                        { label: 'Teachers',    v: snap.teachers_count },
-                        { label: 'Rooms',       v: snap.rooms_count },
-                      ].map(s => (
-                        <div key={s.label} className="rounded-lg p-3 text-center"
-                          style={{ background: 'var(--paper-2)' }}>
-                          <div className="serif text-2xl leading-none mb-1">{s.v}</div>
-                          <div className="text-[10px] mono" style={{ color: 'var(--ink-3)' }}>{s.label}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2 shrink-0">
-                    <Btn
-                      variant={idx === 0 ? 'brand' : 'primary'}
-                      size="sm"
-                      disabled={loadingId === snap.id}
-                      onClick={() => handleLoad(snap.id)}
-                    >
-                      {loadingId === snap.id ? 'Loading…' : 'Load'}
-                    </Btn>
-                    <Btn variant="ghost" size="sm" onClick={() => navigate('/analytics')}>
-                      Analytics
-                    </Btn>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             <p className="text-center text-[11px] mono py-2" style={{ color: 'var(--ink-3)' }}>
               {snapshots.length} timetable{snapshots.length !== 1 ? 's' : ''} — history is per account
