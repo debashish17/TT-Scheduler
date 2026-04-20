@@ -162,7 +162,6 @@ const Hero: React.FC<{ workflow: string; onEnter: () => void }> = ({ workflow, o
           </div>
           <div className="mt-6 flex items-center gap-5 text-[12px] mono" style={{ color: 'var(--ink-3)' }}>
             <span><Icon name="check" size={12} className="inline mr-1" />Free to start</span>
-            <span><Icon name="check" size={12} className="inline mr-1" />No credit card</span>
             <span><Icon name="check" size={12} className="inline mr-1" />Saves every step</span>
           </div>
         </div>
@@ -191,17 +190,25 @@ const Hero: React.FC<{ workflow: string; onEnter: () => void }> = ({ workflow, o
 };
 
 // ─── Ticker ───────────────────────────────────────────────────────────────────
-const Ticker: React.FC = () => {
-  const items = [
-    "St. Xavier's Mumbai", 'DPS RK Puram', 'Kendriya Vidyalaya', 'Army Public Schools',
-    'IIT Hyderabad · CS', 'BITS Pilani · EEE', 'IIIT Bangalore', 'VIT Vellore · IT',
-    'SRM Institute', 'Amrita University', 'Manipal · SoC', 'Chitkara University',
+const Ticker: React.FC<{ workflow: string }> = ({ workflow }) => {
+  const schoolItems = [
+    'Zero-Clash Schedule', 'Lunch Break Insertion', 'Room Capacity Checks', 'Teacher Conflict Detection',
+    'Multi-Section Classes', 'Excel Export', 'PDF Export', 'Auto-Resolve Wizard',
+    'Max Periods Per Day', 'Per-Teacher Workload Limit', 'Custom Working Days', 'Drag-Free Timetable',
   ];
+  const collegeItems = [
+    'CP-SAT Solver', 'Zero-Clash Guarantee', 'Lab Pair Enforcement', 'Weekly Period Allocation',
+    'Faculty Workload Balancing', 'Room Capacity Checks', 'Excel & PDF Export', 'Auto-Resolve Wizard',
+    'Greedy Fallback Engine', 'Multi-Section Support', 'Live Conflict Diagnostics', 'Constraint Tuning',
+  ];
+  const items = workflow === 'school' ? schoolItems : collegeItems;
   const row = [...items, ...items];
   return (
     <div className="py-5 overflow-hidden" style={{ borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
       <div className="max-w-[1280px] mx-auto px-8 mb-3">
-        <Eyebrow>Running timetables at schools &amp; colleges across India</Eyebrow>
+        <Eyebrow>
+          {workflow === 'school' ? 'What the school scheduler handles' : "What's packed inside the engine"}
+        </Eyebrow>
       </div>
       <div className="flex whitespace-nowrap marquee">
         {row.map((n, i) => (
@@ -300,7 +307,7 @@ const HowItWorks: React.FC<{ workflow: string }> = ({ workflow }) => {
     { n: '04', t: 'Share', d: 'Print or export the finished timetable to Excel or PDF.', time: '1 click' },
   ] : [
     { n: '01', t: 'Describe', d: 'Departments, batches, subjects with credit hours. Import from Excel or fill the wizard.', time: '~8 min' },
-    { n: '02', t: 'Constrain', d: '8 hard rules, lab-pair requirements, soft preferences for faculty.', time: '~3 min' },
+    { n: '02', t: 'Constraint', d: '8 hard rules, lab-pair requirements, soft preferences for faculty.', time: '~3 min' },
     { n: '03', t: 'Solve', d: 'CP-SAT explores billions of states. Live logs, progress bar, guaranteed result.', time: '~60 sec' },
     { n: '04', t: 'Distribute', d: 'Grid, faculty, room and batch views. Excel, PDF and Google Calendar.', time: '1 click' },
   ];
@@ -320,7 +327,7 @@ const HowItWorks: React.FC<{ workflow: string }> = ({ workflow }) => {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-0" style={{ borderTop: '1px solid var(--line)' }}>
           {steps.map((s, i) => (
-            <div key={s.n} className="py-8 pr-6" style={{ borderRight: i < 3 ? '1px solid var(--line)' : undefined }}>
+            <div key={s.n} className="py-8 pr-6 pl-6" style={{ borderRight: i < 3 ? '1px solid var(--line)' : undefined }}>
               <div className="flex items-baseline gap-3 mb-4">
                 <span className="mono text-[11px]" style={{ color: 'var(--ink-3)' }}>{s.n}</span>
                 <span className="mono text-[11px]" style={{ color: 'var(--ink-3)' }}>{s.time}</span>
@@ -389,44 +396,48 @@ const ConstraintsSection: React.FC<{ workflow: string }> = ({ workflow }) => {
 // ─── Testimonial ──────────────────────────────────────────────────────────────
 const Testimonial: React.FC<{ workflow: string }> = ({ workflow }) => {
   const isSchool = workflow === 'school';
+  const schoolHighlights = [
+    { n: '01', title: 'Set up in minutes', body: 'Add your classes, teachers and subjects through a guided wizard. No training needed — any coordinator can do it.' },
+    { n: '02', title: 'Instant, clash-free result', body: 'The scheduler checks every room, teacher and period simultaneously. You get a complete, conflict-free timetable in seconds.' },
+    { n: '03', title: 'Export & share', body: 'Download the finished timetable as a PDF or Excel sheet and share it with staff the same day.' },
+  ];
+  const collegeHighlights = [
+    { n: '01', title: 'Constraint-driven', body: 'Define hard rules once — room capacities, faculty limits, consecutive period caps — and the solver respects every one of them.' },
+    { n: '02', title: 'Solver power', body: 'Google OR-Tools CP-SAT searches millions of combinations and guarantees a clash-free result — or tells you exactly why one isn\'t possible.' },
+    { n: '03', title: 'Multi-format export', body: 'One-click export to Excel or PDF. Class view, faculty view and room view — every stakeholder gets their own sheet.' },
+  ];
+  const highlights = isSchool ? schoolHighlights : collegeHighlights;
   return (
     <section className="max-w-[1280px] mx-auto px-8 py-24" style={{ borderTop: '1px solid var(--line)' }}>
       <div className="grid grid-cols-12 gap-8">
         <div className="col-span-12 md:col-span-2">
-          <Eyebrow>Field report</Eyebrow>
+          <Eyebrow>Why we built this</Eyebrow>
         </div>
         <div className="col-span-12 md:col-span-10">
           {isSchool ? (
-            <>
-              <blockquote className="serif leading-[1.1] tracking-tight max-w-3xl" style={{ fontSize: 42 }}>
-                "Three teachers. Five classes. Forty periods.{' '}
-                <em style={{ color: 'var(--ink-3)' }}>We used to argue for days.</em>{' '}
-                Now we solve it before the first bell."
-              </blockquote>
-              <div className="flex items-center gap-3 mt-8 text-sm">
-                <div className="w-9 h-9 rounded-full edge" style={{ background: 'var(--paper-2)' }} />
-                <div>
-                  <div className="font-semibold">Anita Sharma</div>
-                  <div style={{ color: 'var(--ink-3)' }}>Timetable coordinator, DPS RK Puram</div>
-                </div>
-              </div>
-            </>
+            <p className="serif leading-[1.1] tracking-tight max-w-3xl mb-12" style={{ fontSize: 38, color: 'var(--ink)' }}>
+              School coordinators shouldn't need a software team to build a timetable.
+              We made it{' '}
+              <em style={{ color: 'var(--ink-3)' }}>as simple as filling in a form</em>{' '}
+              — and the solver handles the rest.
+            </p>
           ) : (
-            <>
-              <blockquote className="serif leading-[1.1] tracking-tight max-w-3xl" style={{ fontSize: 42 }}>
-                "We used to lock a registrar in a room for three weeks. Now we describe the{' '}
-                <em style={{ color: 'var(--ink-3)' }}>rules</em>, and the schedule shows up on{' '}
-                <em style={{ color: 'var(--ink-3)' }}>screen</em>."
-              </blockquote>
-              <div className="flex items-center gap-3 mt-8 text-sm">
-                <div className="w-9 h-9 rounded-full edge" style={{ background: 'var(--paper-2)' }} />
-                <div>
-                  <div className="font-semibold">Dr. Priya Menon</div>
-                  <div style={{ color: 'var(--ink-3)' }}>Registrar, IIIT Bangalore</div>
-                </div>
-              </div>
-            </>
+            <p className="serif leading-[1.1] tracking-tight max-w-3xl mb-12" style={{ fontSize: 38, color: 'var(--ink)' }}>
+              Timetable scheduling is a solved problem in computer science.
+              It just hadn't been packaged for the people who actually need it —{' '}
+              <em style={{ color: 'var(--ink-3)' }}>registrars and department heads</em>{' '}
+              working without a dedicated IT team.
+            </p>
           )}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            {highlights.map(h => (
+              <div key={h.n} className="edge rounded-xl p-6" style={{ background: 'var(--paper)' }}>
+                <span className="mono text-[11px] block mb-3" style={{ color: 'var(--ink-3)' }}>{h.n}</span>
+                <h4 className="font-semibold mb-2">{h.title}</h4>
+                <p className="text-[13px] leading-relaxed" style={{ color: 'var(--ink-2)' }}>{h.body}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>
@@ -504,7 +515,7 @@ const LandingPage: React.FC = () => {
     >
       <Nav workflow={workflow} onWorkflow={w => setWorkflow(w as 'school' | 'college')} onEnter={goToApp} />
       <Hero workflow={workflow} onEnter={goToApp} />
-      <Ticker />
+      <Ticker workflow={workflow} />
       <WorkflowSection workflow={workflow} onWorkflow={w => setWorkflow(w as 'school' | 'college')} onEnter={goToApp} />
       <HowItWorks workflow={workflow} />
       <ConstraintsSection workflow={workflow} />
