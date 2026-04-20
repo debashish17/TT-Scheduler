@@ -1,290 +1,240 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaCalendarAlt, FaUserTie, FaGraduationCap, FaExclamationTriangle, FaFileExcel, FaPrint, FaChartBar, FaRedo, FaHistory } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
-import { simpleTimetableAPI } from '../../api/client';
-import toast from 'react-hot-toast';
+import { Btn, Eyebrow, Chip, Dot, Icon, TopBar } from '../ui/primitives';
+import DownloadModal from '../ui/DownloadModal';
 
-const COLORS = [
-  'bg-blue-100 text-blue-800 border-blue-200',
-  'bg-green-100 text-green-800 border-green-200',
-  'bg-purple-100 text-purple-800 border-purple-200',
-  'bg-orange-100 text-orange-800 border-orange-200',
-  'bg-pink-100 text-pink-800 border-pink-200',
-  'bg-yellow-100 text-yellow-800 border-yellow-200',
-  'bg-teal-100 text-teal-800 border-teal-200',
-  'bg-indigo-100 text-indigo-800 border-indigo-200',
+// ─── Colour palette ───────────────────────────────────────────────────────────
+const PALETTE = [
+  '#0369A1', '#0F766E', '#7C3AED', '#B45309',
+  '#BE185D', '#065F46', '#1D4ED8', '#9D174D',
 ];
 
-const TimetableGrid = () => {
+const NAV = [
+  { id: 'timetable',   label: 'Class',     path: '/timetable'    },
+  { id: 'faculty-view',label: 'Faculty',   path: '/faculty-view' },
+  { id: 'student-view',label: 'Student',   path: '/student-view' },
+  { id: 'analytics',   label: 'Analytics', path: '/analytics'    },
+  { id: 'history',     label: 'History',   path: '/history'      },
+];
+
+const TimetableGrid: React.FC = () => {
   const navigate = useNavigate();
   const { generatedTimetable, institutionData } = useOnboardingStore();
-  const [selectedClass, setSelectedClass] = useState(null);
-  const [exporting, setExporting] = useState(false);
+  const [selectedClass, setSelectedClass] = useState<string | null>(null);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [downloadFormat, setDownloadFormat]   = useState<'excel' | 'pdf'>('excel');
+
+  const openDownload = (fmt: 'excel' | 'pdf') => {
+    setDownloadFormat(fmt);
+    setShowDownloadModal(true);
+  };
 
   if (!generatedTimetable) {
     return (
-      <div className="max-w-4xl mx-auto text-center py-20">
-        <div className="text-6xl mb-4">📅</div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">No Timetable Generated</h2>
-        <p className="text-gray-500 mb-6">Complete the setup and generate a timetable first.</p>
-        <button onClick={() => navigate('/screen-1')}
-          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
-          Go to Setup
-        </button>
+      <div className="screen-enter p-8 max-w-2xl mx-auto text-center py-24">
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"
+          style={{ background: 'var(--paper-2)' }}>
+          <Icon name="grid" size={28} style={{ color: 'var(--ink-3)' } as React.CSSProperties} />
+        </div>
+        <h2 className="serif text-4xl tracking-tight mb-2">No timetable yet</h2>
+        <p className="text-sm mb-8" style={{ color: 'var(--ink-3)' }}>
+          Complete the wizard to generate a clash-free schedule.
+        </p>
+        <Btn variant="primary" size="md" onClick={() => navigate('/wizard')}>
+          Start wizard
+        </Btn>
       </div>
     );
   }
 
-  const { assignments = [], working_days = [], time_slots = [], stats = {}, warnings = [] } = generatedTimetable;
+  const { assignments = [], working_days = [], time_slots = [], stats = {}, warnings = [] } = generatedTimetable as any;
+  const errors   = (warnings as any[]).filter(w => w.level === 'error');
+  const cautions = (warnings as any[]).filter(w => w.level === 'warning');
 
-  const errors   = warnings.filter(w => w.level === 'error');
-  const cautions = warnings.filter(w => w.level === 'warning');
-
-  const classes = [...new Set(assignments.map(a => a.class_name))].sort();
+  const classes = [...new Set((assignments as any[]).map(a => a.class_name))].sort() as string[];
   const currentClass = selectedClass || classes[0] || '';
+  const allSubjects  = [...new Set((assignments as any[]).map(a => a.subject_code))] as string[];
+  const subjectColor: Record<string, string> = {};
+  allSubjects.forEach((c, i) => { subjectColor[c] = PALETTE[i % PALETTE.length]; });
 
-  const allSubjects = [...new Set(assignments.map(a => a.subject_code))];
-  const subjectColors: Record<string, string> = {};
-  allSubjects.forEach((code: any, i) => { subjectColors[code] = COLORS[i % COLORS.length]; });
+  const classGrid: Record<string, Record<number, any>> = {};
+  (working_days as string[]).forEach(d => { classGrid[d] = {}; });
+  (assignments as any[]).filter(a => a.class_name === currentClass).forEach(a => {
+    if (!classGrid[a.day]) classGrid[a.day] = {};
+    classGrid[a.day][a.period] = a;
+  });
+  const periods = (time_slots as any[]).map((s, i) => ({ period: i + 1, ...s }));
 
-  const buildClassGrid = (className) => {
-    const grid = {};
-    working_days.forEach(day => { grid[day] = {}; });
-    assignments.filter(a => a.class_name === className).forEach(a => {
-      if (!grid[a.day]) grid[a.day] = {};
-      grid[a.day][a.period] = a;
-    });
-    return grid;
-  };
-
-  const classGrid = buildClassGrid(currentClass);
-  const periods = time_slots.map((s, i) => ({ period: i + 1, ...s }));
-
-  // ── Export to Excel ─────────────────────────────
-  const handleExportExcel = async () => {
-    setExporting(true);
-    const toastId = toast.loading('Generating Excel file…');
-    try {
-      const payload = {
-        institution_name: institutionData?.name || 'My School',
-        assignments,
-        working_days,
-        time_slots,
-        stats,
-      };
-      const res = await simpleTimetableAPI.exportExcel(payload);
-      const url = URL.createObjectURL(res.data);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${(institutionData?.name || 'Timetable').replace(/ /g, '_')}_Timetable.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Excel file downloaded!', { id: toastId });
-    } catch (err) {
-      console.error(err);
-      toast.error('Export failed. Is the backend running?', { id: toastId });
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  // ── Print ──────────────────────────────────────
-  const handlePrint = () => window.print();
 
   return (
-    <div className="max-w-7xl mx-auto">
-      {/* Print-only header */}
-      <div className="hidden print:block text-center mb-4">
-        <h1 className="text-2xl font-bold">{institutionData?.name || 'School'} — Timetable</h1>
-        <p className="text-sm text-gray-500">Class: {currentClass}</p>
-      </div>
+    <div className="screen-enter">
+      <TopBar
+        title="Timetable"
+        crumbs={[institutionData?.name || 'School', currentClass]}
+        actions={
+          <>
+            <Btn variant="ghost" size="sm" onClick={() => openDownload('excel')}>
+              <Icon name="dl" size={13} /> Excel
+            </Btn>
+            <Btn variant="ghost" size="sm" onClick={() => openDownload('pdf')}>
+              <Icon name="file" size={13} /> PDF
+            </Btn>
+          </>
+        }
+      />
 
-      {/* Header */}
-      <div className="bg-white rounded-2xl shadow-lg p-6 mb-4 print:hidden">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              📅 {institutionData?.name || 'School'} Timetable
-            </h1>
-            <p className="text-gray-500 text-sm mt-1">
-              {stats.solver || 'CP-SAT'} solver • {stats.total_assignments} assignments •{' '}
-              {stats.solve_time_seconds}s solve time
-            </p>
-          </div>
-
-          {/* View Tabs */}
-          <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
-            {[
-              { id: 'class',     icon: <FaCalendarAlt />, label: 'Class',     path: '/timetable'    },
-              { id: 'faculty',   icon: <FaUserTie />,     label: 'Faculty',   path: '/faculty-view' },
-              { id: 'student',   icon: <FaGraduationCap />, label: 'Student', path: '/student-view' },
-              { id: 'analytics', icon: <FaChartBar />,    label: 'Analytics', path: '/analytics'    },
-              { id: 'history',   icon: <FaHistory />,     label: 'History',   path: '/history'      },
-            ].map(tab => (
-              <button key={tab.id}
-                onClick={() => navigate(tab.path)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                  tab.id === 'class' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-800'
-                }`}>
-                {tab.icon}{tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Warnings Panel */}
-      {warnings.length > 0 && (
-        <div className="space-y-2 mb-4 print:hidden">
-          {errors.map((w, i) => (
-            <div key={i} className="flex gap-3 items-start bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-              <FaExclamationTriangle className="text-red-500 mt-0.5 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-red-800">{w.message}</p>
-                {w.detail && (
-                  <p className="text-xs text-red-600 mt-0.5 font-mono">
-                    {Object.entries(w.detail).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' · ')}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
-          {cautions.map((w, i) => (
-            <div key={i} className="flex gap-3 items-start bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
-              <FaExclamationTriangle className="text-yellow-500 mt-0.5 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-yellow-800">{w.message}</p>
-                {w.detail && (
-                  <p className="text-xs text-yellow-600 mt-0.5 font-mono">
-                    {Object.entries(w.detail).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' · ')}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Class Selector */}
-      {classes.length > 1 && (
-        <div className="flex gap-2 mb-4 flex-wrap print:hidden">
-          {classes.map((cls: any) => (
-            <button key={cls}
-              onClick={() => setSelectedClass(cls)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                currentClass === cls
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-              }`}>
-              {cls}
+      <div className="p-8 max-w-[1400px] mx-auto">
+        {/* View nav */}
+        <div className="flex gap-1 mb-6 edge rounded-full overflow-hidden p-1 w-fit" style={{ background: 'var(--paper)' }}>
+          {NAV.map(n => (
+            <button
+              key={n.id}
+              onClick={() => navigate(n.path)}
+              className="px-4 py-1.5 rounded-full text-sm font-medium transition-colors"
+              style={{
+                background: window.location.pathname === n.path ? 'var(--ink)' : 'transparent',
+                color: window.location.pathname === n.path ? 'var(--paper)' : 'var(--ink-3)',
+              }}
+            >
+              {n.label}
             </button>
           ))}
         </div>
-      )}
 
-      {/* Timetable Grid */}
-      <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px]">
-            <thead>
-              <tr className="bg-gray-900 text-white">
-                <th className="w-28 px-4 py-3 text-left text-sm font-medium">Period</th>
-                {working_days.map(day => (
-                  <th key={day} className="px-3 py-3 text-center text-sm font-medium">{day.slice(0, 3)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {periods.map((slot, pi) => (
-                <tr key={pi} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-2 bg-gray-50 border-r border-gray-100">
-                    <div className="text-xs font-semibold text-gray-700">P{slot.period}</div>
-                    <div className="text-xs text-gray-400 font-mono">{slot.start}–{slot.end}</div>
-                  </td>
-                  {working_days.map(day => {
-                    const a = classGrid[day]?.[slot.period];
-                    return (
-                      <td key={day} className="px-2 py-2 text-center border-r border-gray-100">
-                        {a ? (
-                          <div className={`rounded-lg border px-2 py-1.5 text-xs ${subjectColors[a.subject_code] || COLORS[0]}`}>
-                            <div className="font-semibold">{a.subject_code}</div>
-                            <div className="text-xs opacity-80 truncate mt-0.5">{a.teacher_name}</div>
-                            <div className="text-xs opacity-70">{a.room_name}</div>
-                          </div>
-                        ) : (
-                          <div className="text-gray-200 text-xs py-1">—</div>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* Stats strip */}
+        <div className="flex items-center gap-6 mb-6 text-sm mono" style={{ color: 'var(--ink-3)' }}>
+          <span>{(stats as any).solver || 'CP-SAT'}</span>
+          <span style={{ color: 'var(--line)' }}>|</span>
+          <span>{(assignments as any[]).length} assignments</span>
+          <span style={{ color: 'var(--line)' }}>|</span>
+          <span>{(stats as any).solve_time_seconds?.toFixed(1) ?? '—'}s solve</span>
+          <span style={{ color: 'var(--line)' }}>|</span>
+          <span style={{ color: (stats as any).clashes === 0 ? 'var(--ok)' : 'var(--err)' }}>
+            {(stats as any).clashes ?? 0} clashes
+          </span>
         </div>
 
-        {/* Legend */}
-        <div className="p-4 border-t border-gray-100 bg-gray-50">
-          <div className="flex flex-wrap gap-2">
-            {allSubjects.map((code: any) => {
-              const subj = assignments.find(a => a.subject_code === code);
+        {/* Warnings */}
+        {(errors.length > 0 || cautions.length > 0) && (
+          <div className="space-y-2 mb-6">
+            {[...errors, ...cautions].map((w: any, i) => (
+              <div key={i} className="flex gap-3 items-start rounded-xl px-4 py-3"
+                style={{ background: w.level === 'error' ? '#FEF2F2' : '#FFFBEB', border: `1px solid ${w.level === 'error' ? '#FECACA' : '#FDE68A'}` }}>
+                <Icon name="x" size={14} style={{ color: w.level === 'error' ? 'var(--err)' : 'var(--warn)', marginTop: 2 } as React.CSSProperties} />
+                <p className="text-sm">{w.message}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Class pills */}
+        {classes.length > 1 && (
+          <div className="flex flex-wrap gap-2 mb-6">
+            {classes.map(cls => (
+              <button
+                key={cls}
+                onClick={() => setSelectedClass(cls)}
+                className="px-3 py-1 rounded-full text-sm font-medium transition-colors"
+                style={{
+                  background: currentClass === cls ? 'var(--ink)' : 'var(--paper)',
+                  color: currentClass === cls ? 'var(--paper)' : 'var(--ink-2)',
+                  border: `1px solid ${currentClass === cls ? 'var(--ink)' : 'var(--line)'}`,
+                }}
+              >
+                {cls}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Grid */}
+        <div className="edge rounded-xl overflow-hidden mb-6" style={{ background: 'var(--paper)' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px]">
+              <thead>
+                <tr style={{ background: 'var(--ink)', color: 'var(--paper)' }}>
+                  <th className="px-4 py-3 text-left text-[11px] mono font-medium w-28">Period</th>
+                  {(working_days as string[]).map(day => (
+                    <th key={day} className="px-3 py-3 text-center text-[11px] mono font-medium">
+                      {day.slice(0, 3).toUpperCase()}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {periods.map((slot: any, pi: number) => (
+                  <tr key={pi} style={{ borderTop: '1px solid var(--line)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--paper-2)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <td className="px-4 py-2" style={{ borderRight: '1px solid var(--line)' }}>
+                      <div className="text-[11px] font-semibold">P{slot.period}</div>
+                      <div className="text-[10px] mono" style={{ color: 'var(--ink-3)' }}>
+                        {slot.start}–{slot.end}
+                      </div>
+                    </td>
+                    {(working_days as string[]).map(day => {
+                      const a = classGrid[day]?.[slot.period];
+                      return (
+                        <td key={day} className="px-2 py-2 text-center" style={{ borderRight: '1px solid var(--line)' }}>
+                          {a ? (
+                            <div className="rounded-lg px-2 py-1.5 text-left"
+                              style={{ background: subjectColor[a.subject_code] + '18', border: `1px solid ${subjectColor[a.subject_code]}33` }}>
+                              <div className="text-[11px] font-semibold" style={{ color: subjectColor[a.subject_code] }}>
+                                {a.subject_code}
+                              </div>
+                              <div className="text-[10px] truncate" style={{ color: 'var(--ink-2)' }}>{a.teacher_name}</div>
+                              <div className="text-[10px]" style={{ color: 'var(--ink-3)' }}>{a.room_name}</div>
+                            </div>
+                          ) : (
+                            <div className="text-[11px]" style={{ color: 'var(--line)' }}>—</div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Legend */}
+          <div className="px-4 py-3 flex flex-wrap gap-2" style={{ borderTop: '1px solid var(--line)', background: 'var(--paper-2)' }}>
+            {allSubjects.map(code => {
+              const subj = (assignments as any[]).find(a => a.subject_code === code);
               return (
-                <span key={code} className={`px-3 py-1 rounded-full text-xs font-medium border ${subjectColors[code]}`}>
-                  {code} — {subj?.subject_name}
+                <span key={code} className="px-2.5 py-1 rounded-full text-[11px] font-medium"
+                  style={{ background: subjectColor[code] + '18', color: subjectColor[code], border: `1px solid ${subjectColor[code]}33` }}>
+                  {code}{subj?.subject_name ? ` — ${subj.subject_name}` : ''}
                 </span>
               );
             })}
           </div>
         </div>
-      </div>
 
-      {/* Action bar */}
-      <div className="mt-4 flex flex-wrap justify-between items-center gap-3 print:hidden">
-        <button onClick={() => navigate('/screen-7')}
-          className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm">
-          <FaRedo size={12} /> Regenerate
-        </button>
-
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={handleExportExcel}
-            disabled={exporting}
-            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium disabled:opacity-60 transition-colors">
-            <FaFileExcel /> {exporting ? 'Exporting…' : 'Export Excel'}
-          </button>
-          <button
-            onClick={handlePrint}
-            className="flex items-center gap-2 px-5 py-2.5 bg-slate-600 text-white rounded-lg hover:bg-slate-700 text-sm font-medium">
-            <FaPrint /> Print
-          </button>
-          <button onClick={() => navigate('/faculty-view')}
-            className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium">
-            <FaUserTie /> Faculty
-          </button>
-          <button onClick={() => navigate('/student-view')}
-            className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
-            <FaGraduationCap /> Student
-          </button>
-          <button onClick={() => navigate('/analytics')}
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
-            <FaChartBar /> Analytics
-          </button>
+        {/* Action row */}
+        <div className="flex items-center justify-between">
+          <Btn variant="ghost" size="sm" onClick={() => navigate('/wizard')}>
+            ← Regenerate
+          </Btn>
+          <div className="flex gap-2">
+            <Btn variant="ghost" size="sm" onClick={() => navigate('/faculty-view')}>Faculty</Btn>
+            <Btn variant="ghost" size="sm" onClick={() => navigate('/student-view')}>Student</Btn>
+            <Btn variant="ghost" size="sm" onClick={() => navigate('/analytics')}>Analytics</Btn>
+          </div>
         </div>
       </div>
 
-      {/* Print styles */}
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          .max-w-7xl, .max-w-7xl * { visibility: visible; }
-          .max-w-7xl { position: absolute; left: 0; top: 0; width: 100%; }
-          .print\\:hidden { display: none !important; }
-          .print\\:block { display: block !important; }
-        }
-      `}</style>
+      {/* Download modal */}
+      {showDownloadModal && (
+        <DownloadModal
+          format={downloadFormat}
+          onClose={() => setShowDownloadModal(false)}
+          timetableData={generatedTimetable}
+          institutionName={institutionData?.name || 'Timetable'}
+        />
+      )}
     </div>
   );
 };

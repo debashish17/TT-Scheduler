@@ -1,16 +1,8 @@
-/**
- * TimetableHistory — shows all past generated timetables for the logged-in user.
- * Users can browse their history in reverse-chronological order and load any
- * previous timetable (with all its inputs) back into the app.
- */
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  FaHistory, FaCalendarAlt, FaUserTie, FaBook, FaDoorOpen,
-  FaUsers, FaArrowLeft, FaPlay, FaChartBar, FaSpinner, FaCheckCircle,
-} from 'react-icons/fa';
 import { snapshotsAPI } from '../../api/client';
 import { useOnboardingStore } from '../../store';
+import { Btn, Eyebrow, Chip, Dot, Icon, TopBar } from '../ui/primitives';
 import toast from 'react-hot-toast';
 
 interface SnapshotSummary {
@@ -26,49 +18,61 @@ interface SnapshotSummary {
   classes_count: number;
 }
 
-const TimetableHistory = () => {
+function toUtc(iso: string): string {
+  return iso.endsWith('Z') ? iso : iso + 'Z';
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(toUtc(iso)).toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return '—';
+  const diff = Date.now() - new Date(toUtc(iso)).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return mins <= 1 ? 'Just now' : `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return days === 1 ? 'Yesterday' : `${days}d ago`;
+}
+
+const TimetableHistory: React.FC = () => {
   const navigate = useNavigate();
   const {
     setInstitutionData, setClassesData, setSubjectsData, setTeachersData,
     setTimeData, setRoomsData, setConstraintsData, setGeneratedTimetable,
   } = useOnboardingStore();
 
-  const [snapshots,  setSnapshots]  = useState<SnapshotSummary[]>([]);
-  const [isLoading,  setIsLoading]  = useState(true);
-  const [loadingId,  setLoadingId]  = useState<string | null>(null);
-  const [error,      setError]      = useState<string | null>(null);
+  const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [error,     setError]     = useState<string | null>(null);
 
-  // ── Fetch history on mount ───────────────────────────────────
-  useEffect(() => {
-    const fetchHistory = async () => {
-      setIsLoading(true);
-      try {
-        const res = await snapshotsAPI.getHistory();
-        setSnapshots(res.data.snapshots || []);
-      } catch (e: any) {
-        if (!e.response) {
-          setError('Cannot reach the backend. Make sure the server is running on http://localhost:8000.');
-        } else {
-          setError(e.response?.data?.detail || 'Failed to load history.');
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchHistory();
-  }, []);
+  // Delete state
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId,      setDeletingId]      = useState<string | null>(null);
 
-  // ── Load a historical snapshot into the store ────────────────
+  const fetchHistory = () => {
+    setLoading(true); setError(null);
+    snapshotsAPI.getHistory()
+      .then(r => setSnapshots(r.data.snapshots || []))
+      .catch(e => setError(e.response?.data?.detail || 'Cannot reach the backend.'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchHistory(); }, []);
+
   const handleLoad = async (id: string) => {
     setLoadingId(id);
     try {
       const res = await snapshotsAPI.getById(id);
-      if (!res.data.found) {
-        toast.error('Snapshot not found.');
-        return;
-      }
+      if (!res.data.found) { toast.error('Snapshot not found.'); return; }
       const snap = res.data.snapshot;
-
       setInstitutionData(snap.institution_data  || null);
       setClassesData(    snap.classes_data       || []);
       setSubjectsData(   snap.subjects_data      || []);
@@ -77,201 +81,196 @@ const TimetableHistory = () => {
       setRoomsData(      snap.rooms_data         || []);
       setConstraintsData(snap.constraints_data   || null);
       setGeneratedTimetable(snap.generated_timetable || null);
-
-      toast.success(`Loaded "${snap.institution_name}" — navigating to timetable`);
+      toast.success(`Loaded "${snap.institution_name}"`);
       navigate('/timetable');
+    } catch { toast.error('Failed to load snapshot.');
+    } finally { setLoadingId(null); }
+  };
+
+  const handleDelete = async (id: string, isLatest: boolean) => {
+    setDeletingId(id);
+    try {
+      await snapshotsAPI.delete(id);
+      // Remove from local state
+      setSnapshots(prev => prev.filter(s => s.id !== id));
+      // If deleting the current active timetable, clear it from the store
+      if (isLatest) {
+        setGeneratedTimetable(null);
+      }
+      setConfirmDeleteId(null);
+      toast.success('Timetable deleted.');
     } catch (e: any) {
-      toast.error('Failed to load snapshot.');
+      toast.error(e.response?.data?.detail || 'Delete failed.');
     } finally {
-      setLoadingId(null);
+      setDeletingId(null);
     }
   };
 
-  // ── Helpers ──────────────────────────────────────────────────
-  const formatDate = (iso: string | null) => {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      year: 'numeric', month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
-  };
-
-  const formatSolveTime = (t: string) => {
-    const n = parseFloat(t);
-    return isNaN(n) ? '—' : `${n.toFixed(1)}s`;
-  };
-
   return (
-    <div className="max-w-5xl mx-auto py-4">
-      {/* Header */}
-      <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center">
-              <FaHistory className="text-2xl text-indigo-600" />
+    <div className="screen-enter">
+      <TopBar
+        title="History"
+        crumbs={['Timetable history']}
+        actions={
+          <Btn variant="ghost" size="sm" onClick={() => navigate('/timetable')}>
+            ← Back to timetable
+          </Btn>
+        }
+      />
+
+      <div className="p-8 max-w-[900px] mx-auto">
+        {loading && (
+          <div className="flex items-center justify-center py-24">
+            <div className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin mr-3"
+              style={{ borderColor: 'var(--brand)', borderTopColor: 'transparent' }} />
+            <span className="text-sm" style={{ color: 'var(--ink-3)' }}>Loading history…</span>
+          </div>
+        )}
+
+        {error && !loading && (
+          <div className="edge rounded-xl p-10 text-center" style={{ background: 'var(--paper)' }}>
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5"
+              style={{ background: 'var(--paper-2)' }}>
+              <Icon name="x" size={22} style={{ color: 'var(--err)' } as React.CSSProperties} />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Timetable History</h1>
-              <p className="text-gray-500 text-sm mt-0.5">
-                All your previously generated timetables — click any to restore it
-              </p>
+            <h2 className="serif text-2xl mb-2">Backend not reachable</h2>
+            <p className="text-sm mb-2" style={{ color: 'var(--ink-3)' }}>
+              Start the server: <code className="mono px-1.5 py-0.5 rounded text-xs"
+                style={{ background: 'var(--paper-2)' }}>uvicorn app.main:app --reload</code>
+            </p>
+            <p className="text-xs mono mb-6" style={{ color: 'var(--err)' }}>{error}</p>
+            <div className="flex gap-2 justify-center">
+              <Btn variant="primary" size="sm" onClick={fetchHistory}>Retry</Btn>
+              <Btn variant="ghost" size="sm" onClick={() => navigate('/wizard')}>New timetable</Btn>
             </div>
           </div>
-          <button
-            onClick={() => navigate('/timetable')}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-sm"
-          >
-            <FaArrowLeft size={12} /> Back to Timetable
-          </button>
-        </div>
-      </div>
+        )}
 
-      {/* States */}
-      {isLoading && (
-        <div className="flex items-center justify-center py-20 text-gray-500">
-          <FaSpinner className="animate-spin text-3xl mr-3 text-indigo-500" />
-          <span className="text-lg">Loading your history...</span>
-        </div>
-      )}
-
-      {error && !isLoading && (
-        <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-8 text-center">
-          <div className="text-5xl mb-4">🔌</div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">Backend Not Running</h2>
-          <p className="text-gray-500 text-sm mb-6 max-w-md mx-auto">
-            The history feature requires the backend server to be running.<br />
-            Start it with: <code className="bg-gray-100 px-2 py-0.5 rounded text-xs font-mono">uvicorn app.main:app --reload</code>
-            &nbsp;from the <code className="bg-gray-100 px-2 py-0.5 rounded text-xs font-mono">backend/</code> folder.
-          </p>
-          <div className="flex gap-3 justify-center flex-wrap">
-            <button
-              onClick={() => { setError(null); setIsLoading(true); snapshotsAPI.getHistory().then(r => { setSnapshots(r.data.snapshots || []); setIsLoading(false); }).catch(e => { setError(e.response ? (e.response.data?.detail || 'Failed to load.') : 'Cannot reach the backend.'); setIsLoading(false); }); }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-semibold text-sm hover:bg-indigo-700 transition-colors"
-            >
-              🔄 Retry
-            </button>
-            <button
-              onClick={() => navigate('/screen-1')}
-              className="flex items-center gap-2 px-5 py-2.5 border border-gray-300 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors"
-            >
-              Start New Timetable
-            </button>
+        {!loading && !error && snapshots.length === 0 && (
+          <div className="edge rounded-xl p-16 text-center" style={{ background: 'var(--paper)' }}>
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5"
+              style={{ background: 'var(--paper-2)' }}>
+              <Icon name="stack" size={22} style={{ color: 'var(--ink-3)' } as React.CSSProperties} />
+            </div>
+            <h2 className="serif text-2xl mb-2">No history yet</h2>
+            <p className="text-sm mb-6" style={{ color: 'var(--ink-3)' }}>
+              Generate your first timetable to see it here.
+            </p>
+            <Btn variant="primary" size="sm" onClick={() => navigate('/wizard')}>
+              <Icon name="plus" size={13} /> Start creating
+            </Btn>
           </div>
-          {error && error !== 'Cannot reach the backend. Make sure the server is running on http://localhost:8000.' && (
-            <p className="mt-4 text-xs text-red-500 font-mono bg-red-50 rounded-lg px-3 py-2 inline-block">{error}</p>
-          )}
-        </div>
-      )}
+        )}
 
-      {!isLoading && !error && snapshots.length === 0 && (
-        <div className="text-center py-20">
-          <div className="text-6xl mb-4">📋</div>
-          <h2 className="text-xl font-bold text-gray-700 mb-2">No History Yet</h2>
-          <p className="text-gray-500 mb-6">
-            Generate your first timetable and it will appear here automatically.
-          </p>
-          <button
-            onClick={() => navigate('/screen-1')}
-            className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
-          >
-            Start Creating
-          </button>
-        </div>
-      )}
+        {!loading && !error && snapshots.length > 0 && (
+          <div className="space-y-3">
+            {snapshots.map((snap, idx) => {
+              const isLatest   = idx === 0;
+              const isConfirm  = confirmDeleteId === snap.id;
+              const isDeleting = deletingId === snap.id;
 
-      {/* Snapshot cards */}
-      {!isLoading && !error && snapshots.length > 0 && (
-        <div className="space-y-4">
-          {snapshots.map((snap, idx) => (
-            <div
-              key={snap.id}
-              className={`bg-white rounded-2xl shadow-sm border-2 transition-all duration-200 ${
-                idx === 0
-                  ? 'border-indigo-200 shadow-indigo-50'
-                  : 'border-gray-100 hover:border-gray-200'
-              }`}
-            >
-              <div className="p-6">
-                <div className="flex items-start justify-between gap-4">
-                  {/* Left: Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                      <h3 className="text-lg font-bold text-gray-900 truncate">
-                        {snap.institution_name || 'Untitled Timetable'}
-                      </h3>
-                      {idx === 0 && (
-                        <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-semibold">
-                          Latest
-                        </span>
-                      )}
-                      <span className="px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs font-medium border border-green-200">
-                        {snap.solver}
-                      </span>
+              return (
+                <div
+                  key={snap.id}
+                  className="edge rounded-xl p-6 transition-shadow"
+                  style={{
+                    background: 'var(--paper)',
+                    boxShadow: isLatest ? '0 0 0 1.5px var(--brand)' : undefined,
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <h3 className="font-semibold truncate">
+                          {snap.institution_name || 'Untitled'}
+                        </h3>
+                        {isLatest && <Chip tone="ok"><Dot color="var(--ok)" /> latest</Chip>}
+                        {snap.solver && (
+                          <Chip tone="neutral">{snap.solver}</Chip>
+                        )}
+                      </div>
+                      <p className="text-[12px] mono mb-4" style={{ color: 'var(--ink-3)' }}>
+                        {formatDate(snap.created_at)} · {relativeTime(snap.created_at)}
+                      </p>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {[
+                          { label: 'Assignments', v: snap.total_assignments },
+                          { label: 'Solve time',  v: snap.solve_time ? `${parseFloat(snap.solve_time).toFixed(1)}s` : '—' },
+                          { label: 'Subjects',    v: snap.subjects_count },
+                          { label: 'Teachers',    v: snap.teachers_count },
+                          { label: 'Rooms',       v: snap.rooms_count },
+                        ].map(s => (
+                          <div key={s.label} className="rounded-lg p-3 text-center"
+                            style={{ background: 'var(--paper-2)' }}>
+                            <div className="serif text-2xl leading-none mb-1">{s.v}</div>
+                            <div className="text-[10px] mono" style={{ color: 'var(--ink-3)' }}>{s.label}</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <p className="text-sm text-gray-400 mb-4">
-                      🕒 {formatDate(snap.created_at)}
-                    </p>
 
-                    {/* Stats grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                      {[
-                        { icon: <FaCheckCircle className="text-green-500" />, label: 'Assignments', value: snap.total_assignments },
-                        { icon: <FaChartBar className="text-blue-500" />,     label: 'Solve Time',  value: formatSolveTime(snap.solve_time) },
-                        { icon: <FaBook className="text-purple-500" />,       label: 'Subjects',    value: snap.subjects_count },
-                        { icon: <FaUserTie className="text-orange-500" />,    label: 'Teachers',    value: snap.teachers_count },
-                        { icon: <FaDoorOpen className="text-red-500" />,      label: 'Rooms',       value: snap.rooms_count },
-                      ].map((stat) => (
-                        <div
-                          key={stat.label}
-                          className="flex flex-col items-center bg-gray-50 rounded-xl p-3 text-center"
+                    {/* Actions column */}
+                    <div className="flex flex-col gap-2 shrink-0">
+                      <Btn
+                        variant={isLatest ? 'brand' : 'primary'}
+                        size="sm"
+                        disabled={loadingId === snap.id}
+                        onClick={() => handleLoad(snap.id)}
+                      >
+                        {loadingId === snap.id ? 'Loading…' : 'Load'}
+                      </Btn>
+                      <Btn variant="ghost" size="sm" onClick={() => navigate('/analytics')}>
+                        Analytics
+                      </Btn>
+
+                      {/* Delete / Confirm row */}
+                      {!isConfirm ? (
+                        <Btn
+                          variant="ghost"
+                          size="sm"
+                          disabled={isDeleting}
+                          onClick={() => setConfirmDeleteId(snap.id)}
                         >
-                          <div className="text-base mb-1">{stat.icon}</div>
-                          <div className="text-lg font-bold text-gray-800">{stat.value}</div>
-                          <div className="text-xs text-gray-400">{stat.label}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Right: Load button */}
-                  <div className="flex flex-col gap-2 shrink-0">
-                    <button
-                      onClick={() => handleLoad(snap.id)}
-                      disabled={loadingId === snap.id}
-                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-                        idx === 0
-                          ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md hover:shadow-indigo-200'
-                          : 'bg-gray-800 text-white hover:bg-gray-900'
-                      } disabled:opacity-60 disabled:cursor-not-allowed`}
-                    >
-                      {loadingId === snap.id ? (
-                        <><FaSpinner className="animate-spin" /> Loading...</>
+                          <Icon name="x" size={12} /> Delete
+                        </Btn>
                       ) : (
-                        <><FaPlay /> Load</>
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[11px] mono text-center" style={{ color: 'var(--err)' }}>
+                            Delete this timetable?
+                          </span>
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={() => handleDelete(snap.id, isLatest)}
+                              disabled={isDeleting}
+                              className="flex-1 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors"
+                              style={{ background: 'var(--err)', color: '#fff', opacity: isDeleting ? 0.6 : 1 }}
+                            >
+                              {isDeleting ? '…' : 'Yes'}
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(null)}
+                              disabled={isDeleting}
+                              className="flex-1 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors"
+                              style={{ background: 'var(--paper-2)', color: 'var(--ink-2)' }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
                       )}
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (idx === 0) navigate('/timetable');
-                        else handleLoad(snap.id).then(() => navigate('/analytics'));
-                      }}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-                    >
-                      <FaChartBar size={12} /> Analytics
-                    </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          ))}
+              );
+            })}
 
-          {/* Footer note */}
-          <p className="text-center text-xs text-gray-400 py-2">
-            Showing last {snapshots.length} timetable{snapshots.length !== 1 ? 's' : ''} — history is preserved per user account
-          </p>
-        </div>
-      )}
+            <p className="text-center text-[11px] mono py-2" style={{ color: 'var(--ink-3)' }}>
+              {snapshots.length} timetable{snapshots.length !== 1 ? 's' : ''} — history is per account
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

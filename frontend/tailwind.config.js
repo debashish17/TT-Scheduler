@@ -7,6 +7,11 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans:  ['Manrope', 'system-ui', 'sans-serif'],
+        serif: ['DM Serif Display', 'ui-serif', 'serif'],
+        mono:  ['JetBrains Mono', 'ui-monospace', 'monospace'],
+      },
       colors: {
         // Existing primary palette (keep as-is)
         primary: {

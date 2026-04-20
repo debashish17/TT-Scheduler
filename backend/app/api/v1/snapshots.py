@@ -221,6 +221,47 @@ async def get_snapshot_history(
         raise HTTPException(status_code=503, detail=f"DB not available: {e}")
 
 
+@router.delete("/{snapshot_id}")
+async def delete_snapshot(
+    snapshot_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Permanently delete a snapshot owned by the authenticated user.
+    Returns 404 if the snapshot does not exist or belongs to another user.
+    """
+    try:
+        from app.db.session import SessionLocal
+        from sqlalchemy import text
+
+        db = SessionLocal()
+        try:
+            result = db.execute(
+                text("""
+                    DELETE FROM user_timetable_snapshots
+                    WHERE id = :snap_id AND user_id = :user_id
+                """),
+                {"snap_id": snapshot_id, "user_id": str(current_user.id)},
+            )
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Snapshot not found")
+            db.commit()
+            logger.info(f"Snapshot deleted: id={snapshot_id} user={current_user.id}")
+            return {"success": True, "deleted_id": snapshot_id}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Snapshot delete error: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Snapshot delete failed: {e}")
+        finally:
+            db.close()
+
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=f"DB not available: {e}")
+
+
 @router.get("/{snapshot_id}")
 async def get_snapshot_by_id(
     snapshot_id: str,

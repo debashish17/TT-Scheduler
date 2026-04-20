@@ -401,16 +401,51 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
         room_timeslot.append(rc)
     model.AddAllDifferent(room_timeslot)
 
+    # ── Subject constraints ──────────────────────────────
+    # Group sessions by (class, subject)
+    cs_groups: Dict[Tuple[int, int], List[int]] = {}
+    for s, (ci, si) in enumerate(sessions):
+        cs_groups.setdefault((ci, si), []).append(s)
+
+    for (ci, si), grp in cs_groups.items():
+        if len(grp) > 1:
+            # Hard Constraint: Ensure the same teacher teaches all sessions of a specific class-subject combination
+            for i in range(1, len(grp)):
+                model.Add(t_var[grp[0]] == t_var[grp[i]])
+
+            # Hard Constraint: Forbid consecutive periods of the same subject on the same day for a class
+            for i in range(len(grp)):
+                for j in range(i + 1, len(grp)):
+                    same_day = model.NewBoolVar(f"hs_sd_{ci}_{si}_{i}_{j}")
+                    model.Add(day_var[grp[i]] == day_var[grp[j]]).OnlyEnforceIf(same_day)
+                    model.Add(day_var[grp[i]] != day_var[grp[j]]).OnlyEnforceIf(same_day.Not())
+
+                    vp_diff = model.NewIntVar(-n_valid, n_valid, f"hs_vpdiff_{ci}_{si}_{i}_{j}")
+                    model.Add(vp_diff == vp_var[grp[i]] - vp_var[grp[j]])
+
+                    is_consec_1 = model.NewBoolVar(f"hs_c1_{ci}_{si}_{i}_{j}")
+                    model.Add(vp_diff == 1).OnlyEnforceIf(is_consec_1)
+                    model.Add(vp_diff != 1).OnlyEnforceIf(is_consec_1.Not())
+
+                    is_consec_m1 = model.NewBoolVar(f"hs_cm1_{ci}_{si}_{i}_{j}")
+                    model.Add(vp_diff == -1).OnlyEnforceIf(is_consec_m1)
+                    model.Add(vp_diff != -1).OnlyEnforceIf(is_consec_m1.Not())
+
+                    is_consec = model.NewBoolVar(f"hs_consec_{ci}_{si}_{i}_{j}")
+                    model.AddBoolOr([is_consec_1, is_consec_m1]).OnlyEnforceIf(is_consec)
+                    model.AddBoolAnd([is_consec_1.Not(), is_consec_m1.Not()]).OnlyEnforceIf(is_consec.Not())
+
+                    # They cannot be on the same day, consecutive, and both scheduled
+                    forbidden = model.NewBoolVar(f"hs_forbid_{ci}_{si}_{i}_{j}")
+                    model.AddBoolAnd([same_day, is_consec, is_scheduled[grp[i]], is_scheduled[grp[j]]]).OnlyEnforceIf(forbidden)
+                    model.AddBoolOr([same_day.Not(), is_consec.Not(), is_scheduled[grp[i]].Not(), is_scheduled[grp[j]].Not()]).OnlyEnforceIf(forbidden.Not())
+                    model.Add(forbidden == 0)
+
     # ── Soft constraints as objective ──────────────────────
     # 4. Spread each subject across different days per class (soft)
     #    Penalty: count pairs of sessions of same (class, subject) on the same day
     #    We want to minimize this.
     penalty_terms = []
-
-    # Group sessions by (class, subject)
-    cs_groups: Dict[Tuple[int, int], List[int]] = {}
-    for s, (ci, si) in enumerate(sessions):
-        cs_groups.setdefault((ci, si), []).append(s)
 
     for (ci, si), grp in cs_groups.items():
         if len(grp) < 2:

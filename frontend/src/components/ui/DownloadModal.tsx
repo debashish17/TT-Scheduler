@@ -1,0 +1,503 @@
+import React, { useState } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import JSZip from 'jszip';
+import { simpleTimetableAPI } from '../../api/client';
+import { Btn, Eyebrow, Icon } from './primitives';
+import toast from 'react-hot-toast';
+
+// ─── View definitions ─────────────────────────────────────────────────────────
+const ALL_VIEWS = [
+  { id: 'class',     label: 'Class view',   desc: 'Timetable grid per class / batch' },
+  { id: 'faculty',   label: 'Faculty view', desc: 'Schedule per teacher'              },
+  { id: 'student',   label: 'Student view', desc: 'Student-facing class schedule'     },
+  { id: 'analytics', label: 'Analytics',    desc: 'Stats & utilisation summary'       },
+];
+
+interface Props {
+  format: 'excel' | 'pdf';
+  onClose: () => void;
+  timetableData: any;
+  institutionName: string;
+}
+
+// ─── Shared style constants ───────────────────────────────────────────────────
+const INK     = [17,  17,  17]  as [number, number, number];
+const WHITE   = [255, 255, 255] as [number, number, number];
+const PAPER2  = [245, 245, 245] as [number, number, number];
+const LINES   = [220, 220, 220] as [number, number, number];
+const INK3    = [130, 130, 130] as [number, number, number];
+
+// ─── Page header helper ───────────────────────────────────────────────────────
+function addHeader(doc: jsPDF, title: string, subtitle: string) {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(...INK);
+  doc.text(title, 14, 14);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...INK3);
+  doc.text(subtitle, 14, 21);
+  doc.setTextColor(0, 0, 0);
+}
+
+// ─── Build grid head/body for autoTable ──────────────────────────────────────
+function buildGrid(
+  assignments: any[],
+  working_days: string[],
+  time_slots: any[],
+  matchFn: (a: any) => boolean,
+  cellFn: (a: any | null) => string,
+) {
+  const head = [['Period', ...working_days.map((d: string) => d.slice(0, 3).toUpperCase())]];
+  const body = time_slots.map((slot: any, i: number) => {
+    const period = i + 1;
+    const row: string[] = [`P${period}\n${slot.start}–${slot.end}`];
+    working_days.forEach((day: string) => {
+      const a = assignments.find(
+        (x: any) => matchFn(x) && x.day === day && x.period === period,
+      ) ?? null;
+      row.push(cellFn(a));
+    });
+    return row;
+  });
+  return { head, body };
+}
+
+const tableOpts = {
+  theme: 'grid' as const,
+  headStyles: { fillColor: INK, textColor: WHITE, fontSize: 8, halign: 'center' as const },
+  bodyStyles: { fontSize: 7.5, cellPadding: { top: 2, right: 3, bottom: 2, left: 3 } },
+  columnStyles: { 0: { fontStyle: 'bold' as const, fillColor: PAPER2, cellWidth: 22 } },
+  styles: { valign: 'top' as const, lineColor: LINES, overflow: 'linebreak' as const },
+  margin: { top: 26, left: 14, right: 14 },
+};
+
+const genDate = new Date().toLocaleDateString('en-GB', {
+  day: 'numeric', month: 'short', year: 'numeric',
+});
+
+// ─── PDF generators ───────────────────────────────────────────────────────────
+
+/** Class view — one page per class, landscape A4 */
+function pdfClassView(timetableData: any, institutionName: string): ArrayBuffer {
+  const { assignments = [], working_days = [], time_slots = [] } = timetableData as any;
+  const classes = [
+    ...new Set((assignments as any[]).map((a: any) => a.class_name)),
+  ].sort() as string[];
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  classes.forEach((cls: string, idx: number) => {
+    if (idx > 0) doc.addPage();
+    addHeader(doc, `${institutionName}  ·  ${cls}`, `Class Timetable  ·  ${genDate}`);
+
+    const { head, body } = buildGrid(
+      assignments, working_days, time_slots,
+      (a) => a.class_name === cls,
+      (a) => a ? `${a.subject_code}\n${a.teacher_name ?? ''}\n${a.room_name ?? ''}` : '—',
+    );
+    autoTable(doc, { ...tableOpts, head, body, startY: 26 });
+  });
+
+  return doc.output('arraybuffer') as ArrayBuffer;
+}
+
+/** Faculty view — one page per teacher, landscape A4 */
+function pdfFacultyView(timetableData: any, institutionName: string): ArrayBuffer {
+  const { assignments = [], working_days = [], time_slots = [] } = timetableData as any;
+  const teachers = [
+    ...new Set((assignments as any[]).map((a: any) => a.teacher_name)),
+  ].sort() as string[];
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  teachers.forEach((teacher: string, idx: number) => {
+    if (idx > 0) doc.addPage();
+    addHeader(doc, teacher, `${institutionName}  ·  Faculty Schedule  ·  ${genDate}`);
+
+    const { head, body } = buildGrid(
+      assignments, working_days, time_slots,
+      (a) => a.teacher_name === teacher,
+      // Show subject + class + room (teacher already knows who they are)
+      (a) => a ? `${a.subject_code}\n${a.class_name}\n${a.room_name ?? ''}` : '—',
+    );
+    autoTable(doc, { ...tableOpts, head, body, startY: 26 });
+  });
+
+  return doc.output('arraybuffer') as ArrayBuffer;
+}
+
+/** Student view — per-class with student-friendly labels, landscape A4 */
+function pdfStudentView(timetableData: any, institutionName: string): ArrayBuffer {
+  const { assignments = [], working_days = [], time_slots = [] } = timetableData as any;
+  const classes = [
+    ...new Set((assignments as any[]).map((a: any) => a.class_name)),
+  ].sort() as string[];
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  classes.forEach((cls: string, idx: number) => {
+    if (idx > 0) doc.addPage();
+    addHeader(doc, `${institutionName}  ·  ${cls}`, `Student Timetable  ·  ${genDate}`);
+
+    const { head, body } = buildGrid(
+      assignments, working_days, time_slots,
+      (a) => a.class_name === cls,
+      (a) => a ? `${a.subject_code}\n${a.teacher_name ?? ''}\n${a.room_name ?? ''}` : '—',
+    );
+    autoTable(doc, { ...tableOpts, head, body, startY: 26 });
+  });
+
+  return doc.output('arraybuffer') as ArrayBuffer;
+}
+
+/** Analytics view — summary + teacher workload + room usage, portrait A4 */
+function pdfAnalyticsView(timetableData: any, institutionName: string): ArrayBuffer {
+  const { assignments = [], stats = {} } = timetableData as any;
+
+  const classCount   = new Set((assignments as any[]).map((a: any) => a.class_name)).size;
+  const teacherCount = new Set((assignments as any[]).map((a: any) => a.teacher_name)).size;
+  const roomCount    = new Set((assignments as any[]).map((a: any) => a.room_name)).size;
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  addHeader(doc, `${institutionName}  ·  Analytics`, `Generated ${genDate}`);
+
+  const baseHeadStyles = { fillColor: INK, textColor: WHITE, fontSize: 9 };
+  const baseBodyStyles = { fontSize: 9 };
+  const baseStyle      = { lineColor: LINES };
+  const baseMargin     = { left: 14, right: 14 };
+
+  // — Summary strip —
+  autoTable(doc, {
+    head: [['Metric', 'Value']],
+    body: [
+      ['Total Assignments', String((assignments as any[]).length)],
+      ['Classes',          String(classCount)],
+      ['Teachers',         String(teacherCount)],
+      ['Rooms',            String(roomCount)],
+      ['Solver',           (stats as any).solver ?? 'CP-SAT'],
+      ['Solve Time',       `${(stats as any).solve_time_seconds?.toFixed(2) ?? '—'}s`],
+      ['Clashes',          String((stats as any).clashes ?? 0)],
+    ],
+    startY: 26,
+    theme: 'grid',
+    headStyles: baseHeadStyles,
+    bodyStyles: baseBodyStyles,
+    columnStyles: { 0: { fontStyle: 'bold', fillColor: PAPER2, cellWidth: 60 } },
+    styles: baseStyle,
+    margin: baseMargin,
+  });
+
+  // — Teacher workload —
+  const teacherLoad: Record<string, number> = {};
+  (assignments as any[]).forEach((a: any) => {
+    teacherLoad[a.teacher_name] = (teacherLoad[a.teacher_name] || 0) + 1;
+  });
+  const nextY1 = (doc as any).lastAutoTable?.finalY ?? 80;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...INK);
+  doc.text('Teacher Workload', 14, nextY1 + 8);
+
+  autoTable(doc, {
+    head: [['Teacher', 'Periods / Week']],
+    body: Object.entries(teacherLoad)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([t, p]) => [t, String(p)]),
+    startY: nextY1 + 12,
+    theme: 'grid',
+    headStyles: baseHeadStyles,
+    bodyStyles: baseBodyStyles,
+    styles: baseStyle,
+    margin: baseMargin,
+  });
+
+  // — Room usage —
+  const roomLoad: Record<string, number> = {};
+  (assignments as any[]).forEach((a: any) => {
+    roomLoad[a.room_name] = (roomLoad[a.room_name] || 0) + 1;
+  });
+  const nextY2 = (doc as any).lastAutoTable?.finalY ?? 140;
+
+  // If remaining space < 40mm, add a new page
+  if (nextY2 > 230) doc.addPage();
+  const roomStartY = nextY2 > 230 ? 14 : nextY2 + 8;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...INK);
+  doc.text('Room Usage', 14, roomStartY);
+
+  autoTable(doc, {
+    head: [['Room', 'Sessions']],
+    body: Object.entries(roomLoad)
+      .sort(([, a], [, b]) => b - a)
+      .map(([r, cnt]) => [r, String(cnt)]),
+    startY: roomStartY + 4,
+    theme: 'grid',
+    headStyles: baseHeadStyles,
+    bodyStyles: baseBodyStyles,
+    styles: baseStyle,
+    margin: baseMargin,
+  });
+
+  return doc.output('arraybuffer') as ArrayBuffer;
+}
+
+// ─── Download helper ──────────────────────────────────────────────────────────
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// ─── Modal component ──────────────────────────────────────────────────────────
+const DownloadModal: React.FC<Props> = ({ format, onClose, timetableData, institutionName }) => {
+  const [selected, setSelected] = useState<string[]>(['class', 'faculty', 'student', 'analytics']);
+  const [busy, setBusy] = useState(false);
+
+  const toggle = (id: string) =>
+    setSelected(prev => prev.includes(id) ? prev.filter(v => v !== id) : [...prev, id]);
+
+  const handleDownload = async () => {
+    if (selected.length === 0) { toast.error('Select at least one view to download.'); return; }
+    setBusy(true);
+
+    try {
+      // ── PDF path ──────────────────────────────────────────────────────────
+      if (format === 'pdf') {
+        const tid = toast.loading('Generating PDF(s)…');
+        try {
+          const inst = (institutionName || 'Timetable').replace(/ /g, '_');
+
+          // Build a map of filename → ArrayBuffer for each selected view
+          const pdfs: [string, ArrayBuffer][] = [];
+
+          if (selected.includes('class')) {
+            pdfs.push([`${inst}_Class_Timetable.pdf`, pdfClassView(timetableData, institutionName)]);
+          }
+          if (selected.includes('faculty')) {
+            pdfs.push([`${inst}_Faculty_Timetable.pdf`, pdfFacultyView(timetableData, institutionName)]);
+          }
+          if (selected.includes('student')) {
+            pdfs.push([`${inst}_Student_Timetable.pdf`, pdfStudentView(timetableData, institutionName)]);
+          }
+          if (selected.includes('analytics')) {
+            pdfs.push([`${inst}_Analytics.pdf`, pdfAnalyticsView(timetableData, institutionName)]);
+          }
+
+          if (pdfs.length === 0) {
+            toast.error('No data to export.', { id: tid });
+            return;
+          }
+
+          if (pdfs.length === 1) {
+            // Single view → download directly as PDF
+            const [filename, buffer] = pdfs[0];
+            triggerDownload(new Blob([buffer], { type: 'application/pdf' }), filename);
+          } else {
+            // Multiple views → bundle in a zip
+            const zip = new JSZip();
+            pdfs.forEach(([name, buf]) => zip.file(name, buf));
+            const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+            triggerDownload(zipBlob, `${inst}_Timetable.zip`);
+          }
+
+          toast.success(
+            pdfs.length === 1
+              ? 'PDF downloaded!'
+              : `${pdfs.length} PDFs downloaded as zip!`,
+            { id: tid },
+          );
+          onClose();
+        } catch (err) {
+          console.error('PDF generation error:', err);
+          toast.error('PDF generation failed — check console for details.', { id: tid });
+        }
+      }
+
+      // ── Excel path ────────────────────────────────────────────────────────
+      else {
+        const tid = toast.loading('Generating Excel…');
+        try {
+          const { assignments, working_days, time_slots, stats } = timetableData as any;
+          const res = await simpleTimetableAPI.exportExcel({
+            institution_name: institutionName,
+            assignments, working_days, time_slots, stats,
+          });
+          triggerDownload(
+            new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+            `${(institutionName || 'Timetable').replace(/ /g, '_')}.xlsx`,
+          );
+          toast.success('Downloaded!', { id: tid });
+          onClose();
+        } catch {
+          toast.error('Export failed — is the backend running?', { id: tid });
+        }
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 backdrop-blur-sm"
+        style={{ background: 'rgba(0,0,0,0.38)' }}
+        onClick={onClose}
+      />
+
+      {/* Panel */}
+      <div
+        className="relative w-full max-w-sm rounded-2xl edge overflow-hidden"
+        style={{ background: 'var(--paper)' }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-5 pt-5 pb-4"
+          style={{ borderBottom: '1px solid var(--line)' }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: 'var(--paper-2)' }}
+            >
+              <Icon
+                name={format === 'pdf' ? 'file' : 'dl'}
+                size={16}
+                style={{ color: 'var(--brand)' } as React.CSSProperties}
+              />
+            </div>
+            <div>
+              <div className="font-semibold text-[14px]">
+                {format === 'pdf' ? 'Download PDF' : 'Download Excel'}
+              </div>
+              <Eyebrow>
+                {format === 'pdf'
+                  ? 'Each view → separate PDF (zip if multiple)'
+                  : 'Select views to include'}
+              </Eyebrow>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 flex items-center justify-center rounded-full transition-colors"
+            style={{ color: 'var(--ink-3)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--paper-2)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+          >
+            <Icon name="x" size={13} />
+          </button>
+        </div>
+
+        {/* View checkboxes */}
+        <div className="px-5 py-4 space-y-2">
+          {ALL_VIEWS.map(view => {
+            const on = selected.includes(view.id);
+            return (
+              <label
+                key={view.id}
+                className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all select-none"
+                style={{
+                  background: on ? 'var(--paper-2)' : 'transparent',
+                  border: `1px solid ${on ? 'var(--ink-2)' : 'var(--line)'}`,
+                }}
+              >
+                {/* Custom checkbox */}
+                <div
+                  className="w-4 h-4 rounded flex items-center justify-center shrink-0 transition-all"
+                  style={{
+                    background: on ? 'var(--ink)' : 'transparent',
+                    border: `1.5px solid ${on ? 'var(--ink)' : 'var(--line)'}`,
+                  }}
+                >
+                  {on && (
+                    <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+                      <path
+                        d="M1 3.5L3.5 6L8 1"
+                        stroke="white"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                </div>
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={on}
+                  onChange={() => toggle(view.id)}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium">{view.label}</div>
+                  <div className="text-[11px] mono" style={{ color: 'var(--ink-3)' }}>
+                    {view.desc}
+                    {format === 'pdf' && (
+                      <span style={{ color: 'var(--brand)' }}>
+                        {' '}&rarr; {view.label.split(' ')[0]}_Timetable.pdf
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+
+          {/* Zip hint when multiple selected */}
+          {format === 'pdf' && selected.length > 1 && (
+            <div
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] mono"
+              style={{ background: 'var(--brand-soft)', color: 'var(--brand)' }}
+            >
+              <Icon name="stack" size={12} />
+              {selected.length} PDFs will be bundled into a .zip file
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div
+          className="px-5 py-4 flex gap-2.5"
+          style={{ borderTop: '1px solid var(--line)' }}
+        >
+          <Btn variant="ghost" size="md" onClick={onClose} className="flex-1 justify-center">
+            Cancel
+          </Btn>
+          <Btn
+            variant="brand"
+            size="md"
+            onClick={handleDownload}
+            disabled={busy || selected.length === 0}
+            className="flex-[2] justify-center"
+          >
+            {busy ? (
+              <>
+                <svg className="animate-spin h-3.5 w-3.5 mr-1.5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Generating…
+              </>
+            ) : (
+              <>
+                <Icon name={format === 'pdf' ? 'file' : 'dl'} size={13} />
+                Download
+                {format === 'pdf' && selected.length > 1 ? ' as ZIP' : ''}
+              </>
+            )}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default DownloadModal;

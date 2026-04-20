@@ -1,223 +1,282 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaArrowLeft, FaCalendarAlt, FaUserTie, FaGraduationCap, FaChartBar, FaFileExcel, FaPrint } from 'react-icons/fa';
 import { useOnboardingStore } from '../../store';
-import { simpleTimetableAPI } from '../../api/client';
+import { Btn, Eyebrow, Chip, Icon, TopBar } from '../ui/primitives';
 import toast from 'react-hot-toast';
+import DownloadModal from '../ui/DownloadModal';
 
-const COLORS = [
-  'bg-blue-100 text-blue-800 border-blue-200',
-  'bg-green-100 text-green-800 border-green-200',
-  'bg-purple-100 text-purple-800 border-purple-200',
-  'bg-orange-100 text-orange-800 border-orange-200',
-  'bg-pink-100 text-pink-800 border-pink-200',
-  'bg-yellow-100 text-yellow-800 border-yellow-200',
-  'bg-teal-100 text-teal-800 border-teal-200',
-  'bg-indigo-100 text-indigo-800 border-indigo-200',
+const PALETTE = [
+  '#0369A1', '#0F766E', '#7C3AED', '#B45309',
+  '#BE185D', '#065F46', '#1D4ED8', '#9D174D',
 ];
 
-const NAV_TABS = [
-  { id: 'class', icon: <FaCalendarAlt />, label: 'Class', path: '/timetable' },
-  { id: 'faculty', icon: <FaUserTie />, label: 'Faculty', path: '/faculty-view' },
-  { id: 'student', icon: <FaGraduationCap />, label: 'Student', path: '/student-view' },
-  { id: 'analytics', icon: <FaChartBar />, label: 'Analytics', path: '/analytics' },
+const NAV = [
+  { id: 'timetable',    label: 'Class',     path: '/timetable'    },
+  { id: 'faculty-view', label: 'Faculty',   path: '/faculty-view' },
+  { id: 'student-view', label: 'Student',   path: '/student-view' },
+  { id: 'analytics',    label: 'Analytics', path: '/analytics'    },
+  { id: 'history',      label: 'History',   path: '/history'      },
 ];
 
-const FacultyView = () => {
+const FacultyView: React.FC = () => {
   const navigate = useNavigate();
-  const { generatedTimetable, institutionData } = useOnboardingStore();
+  const { generatedTimetable, setGeneratedTimetable, institutionData } = useOnboardingStore();
   const [exporting, setExporting] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [editingTeacher, setEditingTeacher] = useState<{ old: string } | null>(null);
+  const [editName, setEditName] = useState('');
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [downloadFormat, setDownloadFormat]   = useState<'excel' | 'pdf'>('excel');
+
+  const openDownload = (fmt: 'excel' | 'pdf') => {
+    setDownloadFormat(fmt);
+    setShowDownloadModal(true);
+  };
 
   if (!generatedTimetable) {
     return (
-      <div className="max-w-4xl mx-auto text-center py-20">
-        <div className="text-6xl mb-4">👩‍🏫</div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">No Timetable</h2>
-        <p className="text-gray-500 mb-6">Generate a timetable first.</p>
-        <button onClick={() => navigate('/screen-1')}
-          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
-          Go to Setup
-        </button>
+      <div className="screen-enter p-8 max-w-2xl mx-auto text-center py-24">
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"
+          style={{ background: 'var(--paper-2)' }}>
+          <Icon name="users" size={28} style={{ color: 'var(--ink-3)' } as React.CSSProperties} />
+        </div>
+        <h2 className="serif text-4xl tracking-tight mb-2">No timetable yet</h2>
+        <p className="text-sm mb-8" style={{ color: 'var(--ink-3)' }}>Generate a timetable first.</p>
+        <Btn variant="primary" size="md" onClick={() => navigate('/wizard')}>Start wizard</Btn>
       </div>
     );
   }
 
   const { assignments = [], working_days = [], time_slots = [], stats = {} }: any = generatedTimetable;
+  const allSubjects: string[] = [...new Set((assignments as any[]).map((a: any) => a.subject_code))] as string[];
+  const subjectColor: Record<string, string> = {};
+  allSubjects.forEach((c, i) => { subjectColor[c] = PALETTE[i % PALETTE.length]; });
 
-  const teachers: string[] = [...new Set(assignments.map((a: any) => a.teacher_name))].sort() as string[];
-  const allSubjects: string[] = [...new Set(assignments.map((a: any) => a.subject_code))] as string[];
-  const subjectColors: Record<string, string> = {};
-  allSubjects.forEach((code: string, i: number) => { subjectColors[code] = COLORS[i % COLORS.length]; });
-
+  const teachers: string[] = [...new Set((assignments as any[]).map((a: any) => a.teacher_name))].sort() as string[];
   const [selectedTeacher, setSelectedTeacher] = useState<string>(teachers[0] || '');
+  const periods = (time_slots as any[]).map((s: any, i: number) => ({ period: i + 1, ...s }));
 
-  const teacherAssignments: any[] = assignments.filter((a: any) => a.teacher_name === selectedTeacher);
-  const grid: Record<string, any> = {};
-  working_days.forEach((day: string) => { grid[day] = {}; });
-  teacherAssignments.forEach((a: any) => {
-    if (!grid[a.day]) grid[a.day] = {};
-    grid[a.day][a.period] = a;
-  });
+  const teacherAssignments = (assignments as any[]).filter((a: any) => a.teacher_name === selectedTeacher);
+  const grid: Record<string, Record<number, any>> = {};
+  (working_days as string[]).forEach(d => { grid[d] = {}; });
+  teacherAssignments.forEach((a: any) => { if (!grid[a.day]) grid[a.day] = {}; grid[a.day][a.period] = a; });
 
-  const periods: any[] = time_slots.map((s: any, i: number) => ({ period: i + 1, ...s }));
-  const totalPeriodsThisWeek = teacherAssignments.length;
-  const subjectsTaught: string[] = [...new Set(teacherAssignments.map((a: any) => a.subject_code))] as string[];
-  const classesTaught: string[] = [...new Set(teacherAssignments.map((a: any) => a.class_name))] as string[];
-
-  const handleExportExcel = async () => {
-    setExporting(true);
-    const toastId = toast.loading('Generating Excel file…');
-    try {
-      const res = await simpleTimetableAPI.exportExcel({
-        institution_name: institutionData?.name || 'My School',
-        assignments, working_days, time_slots, stats,
-      });
-      const url = URL.createObjectURL(res.data);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${(institutionData?.name || 'Timetable').replace(/ /g, '_')}_Timetable.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Excel downloaded!', { id: toastId });
-    } catch {
-      toast.error('Export failed. Is the backend running?', { id: toastId });
-    } finally {
-      setExporting(false);
-    }
+  const handleRename = (newName: string) => {
+    if (!newName || newName === editingTeacher?.old) { setEditingTeacher(null); return; }
+    const updated = (assignments as any[]).map((a: any) =>
+      a.teacher_name === editingTeacher?.old ? { ...a, teacher_name: newName } : a
+    );
+    setGeneratedTimetable({ ...generatedTimetable, assignments: updated });
+    if (selectedTeacher === editingTeacher?.old) setSelectedTeacher(newName);
+    setEditingTeacher(null);
+    toast.success(`Renamed to ${newName}`);
   };
 
+
   return (
-    <div className="max-w-7xl mx-auto">
-      {/* Print header */}
-      <div className="hidden print:block text-center mb-4">
-        <h1 className="text-2xl font-bold">{institutionData?.name || 'School'} — Faculty Timetable</h1>
-        <p className="text-sm text-gray-500">Teacher: {selectedTeacher}</p>
-      </div>
+    <div className="screen-enter">
+      <TopBar
+        title="Faculty"
+        crumbs={[institutionData?.name || 'School', 'Faculty view']}
+        actions={
+          <>
+            <Btn variant="ghost" size="sm" onClick={() => openDownload('excel')}>
+              <Icon name="dl" size={13} /> Excel
+            </Btn>
+            <Btn variant="ghost" size="sm" onClick={() => openDownload('pdf')}>
+              <Icon name="file" size={13} /> PDF
+            </Btn>
+          </>
+        }
+      />
 
-      {/* Header */}
-      <div className="bg-white rounded-2xl shadow-lg p-6 mb-4 print:hidden">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <FaUserTie className="text-purple-600" /> Faculty Timetable
-            </h1>
-            <p className="text-gray-500 text-sm mt-1">{teachers.length} teachers • {assignments.length} total assignments</p>
-          </div>
-
-          {/* Nav tabs */}
-          <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
-            {NAV_TABS.map(tab => (
-              <button key={tab.id} onClick={() => navigate(tab.path)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                  tab.id === 'faculty' ? 'bg-white shadow text-purple-600' : 'text-gray-600 hover:text-gray-800'
-                }`}>
-                {tab.icon}{tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Teacher Selector */}
-      <div className="bg-white rounded-2xl shadow-lg p-4 mb-4 print:hidden">
-        <label className="text-sm font-semibold text-gray-700 mb-2 block">Select Teacher:</label>
-        <div className="flex flex-wrap gap-2">
-          {teachers.map(teacher => (
-            <button key={teacher} onClick={() => setSelectedTeacher(teacher)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                selectedTeacher === teacher
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}>
-              {teacher}
+      <div className="p-8 max-w-[1400px] mx-auto">
+        {/* View nav */}
+        <div className="flex gap-1 mb-6 edge rounded-full overflow-hidden p-1 w-fit" style={{ background: 'var(--paper)' }}>
+          {NAV.map(n => (
+            <button key={n.id} onClick={() => navigate(n.path)}
+              className="px-4 py-1.5 rounded-full text-sm font-medium transition-colors"
+              style={{
+                background: window.location.pathname === n.path ? 'var(--ink)' : 'transparent',
+                color: window.location.pathname === n.path ? 'var(--paper)' : 'var(--ink-3)',
+              }}>
+              {n.label}
             </button>
           ))}
         </div>
 
-        {selectedTeacher && (
-          <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-gray-100 text-sm">
-            <div><span className="text-gray-500">Periods/week: </span><strong className="text-purple-700">{totalPeriodsThisWeek}</strong></div>
-            <div><span className="text-gray-500">Subjects: </span><strong className="text-purple-700">{subjectsTaught.join(', ')}</strong></div>
-            <div><span className="text-gray-500">Classes: </span><strong className="text-purple-700">{classesTaught.join(', ')}</strong></div>
+        {/* View mode toggle + stats */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex gap-1 edge rounded-full p-1" style={{ background: 'var(--paper)' }}>
+            <button onClick={() => setViewMode('grid')}
+              className="px-4 py-1.5 rounded-full text-sm font-medium"
+              style={{ background: viewMode === 'grid' ? 'var(--ink)' : 'transparent', color: viewMode === 'grid' ? 'var(--paper)' : 'var(--ink-3)' }}>
+              By teacher
+            </button>
+            <button onClick={() => setViewMode('list')}
+              className="px-4 py-1.5 rounded-full text-sm font-medium"
+              style={{ background: viewMode === 'list' ? 'var(--ink)' : 'transparent', color: viewMode === 'list' ? 'var(--paper)' : 'var(--ink-3)' }}>
+              By subject
+            </button>
+          </div>
+          <span className="mono text-[12px]" style={{ color: 'var(--ink-3)' }}>
+            {teachers.length} teachers · {(assignments as any[]).length} assignments
+          </span>
+        </div>
+
+        {viewMode === 'grid' ? (
+          <>
+            {/* Teacher selector */}
+            <div className="edge rounded-xl p-4 mb-6" style={{ background: 'var(--paper)' }}>
+              <Eyebrow className="block mb-3">Select teacher</Eyebrow>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {teachers.map(t => (
+                  <button key={t} onClick={() => setSelectedTeacher(t)}
+                    className="px-3 py-1 rounded-full text-sm font-medium transition-colors"
+                    style={{
+                      background: selectedTeacher === t ? 'var(--ink)' : 'var(--paper-2)',
+                      color: selectedTeacher === t ? 'var(--paper)' : 'var(--ink-2)',
+                    }}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+              {selectedTeacher && (
+                <div className="flex flex-wrap gap-6 pt-3 text-sm" style={{ borderTop: '1px solid var(--line)' }}>
+                  <div>
+                    <span style={{ color: 'var(--ink-3)' }}>Periods/week </span>
+                    <strong>{teacherAssignments.length}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--ink-3)' }}>Subjects </span>
+                    <strong>{[...new Set(teacherAssignments.map((a: any) => a.subject_code))].join(', ')}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--ink-3)' }}>Classes </span>
+                    <strong>{[...new Set(teacherAssignments.map((a: any) => a.class_name))].join(', ')}</strong>
+                  </div>
+                  <button className="ml-auto text-[12px] underline underline-offset-4"
+                    style={{ color: 'var(--ink-3)' }}
+                    onClick={() => { setEditingTeacher({ old: selectedTeacher }); setEditName(selectedTeacher); }}>
+                    Rename
+                  </button>
+                </div>
+              )}
+              {editingTeacher && (
+                <div className="flex items-center gap-2 mt-3">
+                  <input
+                    autoFocus
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleRename(editName)}
+                    className="px-3 py-2 rounded-md text-sm flex-1 outline-none"
+                    style={{ background: 'var(--paper)', border: '1px solid var(--ink)', color: 'var(--ink)' }}
+                  />
+                  <Btn variant="primary" size="sm" onClick={() => handleRename(editName)}>Save</Btn>
+                  <Btn variant="ghost" size="sm" onClick={() => setEditingTeacher(null)}>Cancel</Btn>
+                </div>
+              )}
+            </div>
+
+            {/* Grid */}
+            <div className="edge rounded-xl overflow-hidden mb-6" style={{ background: 'var(--paper)' }}>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px]">
+                  <thead>
+                    <tr style={{ background: 'var(--ink)', color: 'var(--paper)' }}>
+                      <th className="px-4 py-3 text-left text-[11px] mono font-medium w-28">Period</th>
+                      {(working_days as string[]).map(day => (
+                        <th key={day} className="px-3 py-3 text-center text-[11px] mono font-medium">
+                          {day.slice(0, 3).toUpperCase()}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {periods.map((slot: any, pi: number) => (
+                      <tr key={pi} style={{ borderTop: '1px solid var(--line)' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--paper-2)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                        <td className="px-4 py-2" style={{ borderRight: '1px solid var(--line)' }}>
+                          <div className="text-[11px] font-semibold">P{slot.period}</div>
+                          <div className="text-[10px] mono" style={{ color: 'var(--ink-3)' }}>{slot.start}–{slot.end}</div>
+                        </td>
+                        {(working_days as string[]).map(day => {
+                          const a = grid[day]?.[slot.period];
+                          return (
+                            <td key={day} className="px-2 py-2 text-center" style={{ borderRight: '1px solid var(--line)' }}>
+                              {a ? (
+                                <div className="rounded-lg px-2 py-1.5 text-left"
+                                  style={{ background: subjectColor[a.subject_code] + '18', border: `1px solid ${subjectColor[a.subject_code]}33` }}>
+                                  <div className="text-[11px] font-semibold" style={{ color: subjectColor[a.subject_code] }}>
+                                    {a.subject_code}
+                                  </div>
+                                  <div className="text-[10px]" style={{ color: 'var(--ink-2)' }}>{a.class_name}</div>
+                                  <div className="text-[10px]" style={{ color: 'var(--ink-3)' }}>{a.room_name}</div>
+                                </div>
+                              ) : (
+                                <div className="text-[11px]" style={{ color: 'var(--line)' }}>—</div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        ) : (
+          /* By-subject list */
+          <div className="space-y-4">
+            {allSubjects.map((subject: string) => {
+              const sa = (assignments as any[]).filter((a: any) => a.subject_code === subject);
+              const teaches = [...new Set(sa.map((a: any) => a.teacher_name))] as string[];
+              return (
+                <div key={subject} className="edge rounded-xl p-5" style={{ background: 'var(--paper)' }}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <span className="mono text-[11px] px-2.5 py-1 rounded-full font-semibold"
+                      style={{ background: subjectColor[subject] + '18', color: subjectColor[subject] }}>
+                      {subject}
+                    </span>
+                    <span className="text-sm font-medium">{sa[0]?.subject_name || subject}</span>
+                    <span className="mono text-[11px] ml-auto" style={{ color: 'var(--ink-3)' }}>
+                      {sa.length} periods/week
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {teaches.map(teacher => {
+                      const count = sa.filter((a: any) => a.teacher_name === teacher).length;
+                      return (
+                        <div key={teacher} className="flex items-center justify-between p-3 rounded-lg"
+                          style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
+                          <div>
+                            <div className="text-sm font-medium">{teacher}</div>
+                            <div className="text-[11px] mono" style={{ color: 'var(--ink-3)' }}>
+                              {count} period{count !== 1 ? 's' : ''}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Grid */}
-      <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px]">
-            <thead>
-              <tr className="bg-purple-900 text-white">
-                <th className="w-28 px-4 py-3 text-left text-sm font-medium">Period</th>
-                {working_days.map(day => (
-                  <th key={day} className="px-3 py-3 text-center text-sm font-medium">{day.slice(0, 3)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {periods.map((slot, pi) => (
-                <tr key={pi} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-2 bg-gray-50 border-r border-gray-100">
-                    <div className="text-xs font-semibold text-gray-700">P{slot.period}</div>
-                    <div className="text-xs text-gray-400 font-mono">{slot.start}–{slot.end}</div>
-                  </td>
-                  {working_days.map(day => {
-                    const a = grid[day]?.[slot.period];
-                    return (
-                      <td key={day} className="px-2 py-2 text-center border-r border-gray-100">
-                        {a ? (
-                          <div className={`rounded-lg border px-2 py-1.5 text-xs ${subjectColors[a.subject_code] || COLORS[0]}`}>
-                            <div className="font-semibold">{a.subject_code}</div>
-                            <div className="text-xs opacity-80">{a.class_name}</div>
-                            <div className="text-xs opacity-70">{a.room_name}</div>
-                          </div>
-                        ) : (
-                          <div className="text-gray-200 text-xs py-1">—</div>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="mt-4 flex flex-wrap justify-between items-center gap-3 print:hidden">
-        <button onClick={() => navigate('/timetable')}
-          className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm">
-          <FaArrowLeft size={12} /> Class View
-        </button>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={handleExportExcel} disabled={exporting}
-            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium disabled:opacity-60">
-            <FaFileExcel /> {exporting ? 'Exporting…' : 'Export Excel'}
-          </button>
-          <button onClick={() => window.print()}
-            className="flex items-center gap-2 px-5 py-2.5 bg-slate-600 text-white rounded-lg hover:bg-slate-700 text-sm font-medium">
-            <FaPrint /> Print
-          </button>
-          <button onClick={() => navigate('/student-view')}
-            className="px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
-            → Student View
-          </button>
-        </div>
-      </div>
-
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          .max-w-7xl, .max-w-7xl * { visibility: visible; }
-          .max-w-7xl { position: absolute; left: 0; top: 0; width: 100%; }
-          .print\\:hidden { display: none !important; }
-          .print\\:block { display: block !important; }
-        }
-      `}</style>
+      {/* Download modal */}
+      {showDownloadModal && (
+        <DownloadModal
+          format={downloadFormat}
+          onClose={() => setShowDownloadModal(false)}
+          timetableData={generatedTimetable}
+          institutionName={institutionData?.name || 'Timetable'}
+        />
+      )}
     </div>
   );
 };
