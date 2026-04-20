@@ -51,7 +51,9 @@ function computeAllFixes(
       const k  = `add_t_${sc}`;
       if (!seen.has(k)) {
         seen.add(k);
-        teachers.push({ name: `Auto-Teacher (${sc})`, subjects: [sc] });
+        let count = 1;
+        while(teachers.some(t => t.name === `${sc} Teacher ${count}`)) count++;
+        teachers.push({ name: `${sc} Teacher ${count}`, subjects: [sc] });
         log.push(`✔ Added teacher for "${sc}"`);
       }
     }
@@ -85,9 +87,17 @@ function computeAllFixes(
       const k  = `extra_t_${sc}`;
       if (!seen.has(k)) {
         seen.add(k);
-        const cnt = teachers.filter((t: any) => (t.subjects || []).includes(sc)).length;
-        teachers.push({ name: `${sc} Teacher ${cnt + 1}`, subjects: [sc] });
-        log.push(`✔ Added extra teacher for "${sc}"`);
+          const qualifiedCount = d.qualified_teachers?.length || 1;
+          const singleCapacity = Math.floor(d.teacher_capacity / Math.max(1, qualifiedCount)) || 40;
+          const shortage = d.sessions_needed - d.teacher_capacity;
+          const needed = Math.max(1, Math.ceil(shortage / singleCapacity));
+          
+          let count = 1;
+          for (let i = 0; i < needed; i++) {
+            while (teachers.some((t: any) => t.name === `${sc} Teacher ${count}`)) count++;
+            teachers.push({ name: `${sc} Teacher ${count}`, subjects: [sc] });
+          }
+          log.push(`✔ Added ${needed} extra teacher(s) for "${sc}"`);
       }
     }
 
@@ -167,7 +177,7 @@ function analyzeWarnings(
           id: k,
           label: `Add a teacher for "${sc}"`,
           description: `Creates an auto-teacher assigned only to "${sc}" so the solver has someone to fill those periods.`,
-          apply: () => setTeachersData([...(teachersData || []), { name: `Auto-Teacher (${sc})`, subjects: [sc] }]),
+          apply: () => setTeachersData([...(teachersData || []), { name: `${sc} Teacher ${count}`, subjects: [sc] }]),
         });
       }
     }
@@ -241,17 +251,28 @@ function analyzeWarnings(
       const k  = `extra_teacher_${sc}`;
       if (!seen.has(k)) {
         seen.add(k);
-        fixes.push({
-          id: k,
-          label: `Add an extra teacher for "${sc}"`,
-          description: `${d.sessions_needed} sessions needed but teacher(s) can only cover ${d.teacher_capacity}. A second teacher doubles coverage.`,
-          apply: () => {
-            const cnt = (teachersData || []).filter((t: any) => (t.subjects || []).includes(sc)).length;
-            setTeachersData([...(teachersData || []), { name: `${sc} Teacher ${cnt + 2}`, subjects: [sc] }]);
-          },
-        });
+          const qualifiedCount = d.qualified_teachers?.length || 1;
+          const singleCapacity = Math.floor(d.teacher_capacity / Math.max(1, qualifiedCount)) || 40;
+          const shortage = d.sessions_needed - d.teacher_capacity;
+          const needed = Math.max(1, Math.ceil(shortage / singleCapacity));
+
+          fixes.push({
+            id: k,
+            label: `Add ${needed} extra teacher(s) for "${sc}"`,
+            description: `${d.sessions_needed} sessions needed but teacher(s) can only cover ${d.teacher_capacity}. Adding ${needed} more teacher(s) for full coverage.`,
+            apply: () => {
+              const currentTeachers = useOnboardingStore.getState().teachersData || [];
+              let newTeachers = [...currentTeachers];
+              let count = 1;
+              for(let i = 0; i < needed; i++) {
+                while(newTeachers.some(t => t.name === `${sc} Teacher ${count}`)) count++;
+                newTeachers.push({ name: `${sc} Teacher ${count}`, subjects: [sc] });
+              }
+              setTeachersData(newTeachers);
+            },
+          });
+        }
       }
-    }
 
     if (w.code === 'NO_ROOM_FOR_CLASS') {
       const cn   = d.class as string;
@@ -521,6 +542,8 @@ const SetupSummary = () => {
       const warnings: SolverWarning[] = timetableData.warnings || [];
       setSolverWarnings(warnings);
       if (warnings.length > 0) setAutoResolveEnabled(true);
+        const isPrecheck = timetableData.solver === 'Precheck' || !timetableData.assignments || (timetableData.assignments.length === 0);
+        if (!isPrecheck) {
 
       // Auto-save timetable row (non-blocking)
       try {
@@ -557,7 +580,8 @@ const SetupSummary = () => {
         console.warn('Snapshot save warning (timetable still visible):', snapErr.message);
       }
 
-      if (warnings.length === 0) navigate('/timetable');
+      }
+        if (warnings.length === 0) navigate('/timetable');
     } catch (err: any) {
       let msg: string;
       if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
@@ -848,6 +872,8 @@ const SetupSummary = () => {
                 onClick={() => { if (!isApplying && !isAiSolving) setShowResolveModal(false); }}
                 className="text-gray-400 hover:text-gray-600 transition-colors p-1"
                 disabled={isApplying || isAiSolving}
+                title="Close"
+                aria-label="Close"
               >
                 <FaTimes />
               </button>
@@ -923,3 +949,4 @@ const SetupSummary = () => {
 };
 
 export default SetupSummary;
+

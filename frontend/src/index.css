@@ -2,101 +2,149 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 199 89% 48%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 199 89% 48%;
-    --radius: 0.5rem;
-  }
+/* ─── Design tokens ───────────────────────────────────────── */
+:root {
+  --paper:       #FAF9F6;
+  --paper-2:     #F3F1EA;
+  --ink:         #0A0A0A;
+  --ink-2:       #3A3A37;
+  --ink-3:       #6B6B66;
+  --line:        #E7E4DA;
+  --line-2:      #D9D5C8;
+  --brand:       #0369A1;
+  --brand-deep:  #075985;
+  --brand-soft:  #E0F2FE;
+  --ok:          #15803D;
+  --warn:        #B45309;
+  --err:         #B91C1C;
 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 199 89% 48%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 199 89% 48%;
-  }
+  /* shadcn/ui compat tokens */
+  --background: 0 0% 98%;
+  --foreground: 0 0% 4%;
+  --card: 0 0% 98%;
+  --card-foreground: 0 0% 4%;
+  --popover: 0 0% 98%;
+  --popover-foreground: 0 0% 4%;
+  --primary: 201 97% 32%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 48 33% 93%;
+  --secondary-foreground: 0 0% 11%;
+  --muted: 48 33% 93%;
+  --muted-foreground: 50 4% 42%;
+  --accent: 48 33% 93%;
+  --accent-foreground: 0 0% 11%;
+  --destructive: 0 84% 37%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 46 22% 91%;
+  --input: 46 22% 91%;
+  --ring: 201 97% 32%;
+  --radius: 0.75rem;
 }
 
+/* Workflow colour variants */
+body[data-workflow="school"]  { --brand: #0F766E; --brand-deep: #0D5F57; --brand-soft: #CCFBF1; }
+body[data-workflow="college"] { --brand: #0369A1; --brand-deep: #075985; --brand-soft: #E0F2FE; }
 
-@layer base {
-  body {
-    @apply bg-gray-50 text-gray-900;
-  }
+/* ─── Base styles ─────────────────────────────────────────── */
+html, body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Manrope, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
 }
 
+/* ─── Typography helpers ──────────────────────────────────── */
+.serif  { font-family: 'DM Serif Display', ui-serif, serif; letter-spacing: -0.01em; }
+.mono   { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+/* ─── Layout utilities ────────────────────────────────────── */
+.edge   { border: 1px solid var(--line); }
+.edge-2 { border: 1px solid var(--line-2); }
+.divider { border-top: 1px solid var(--line); }
+
+/* ─── Paper grain texture ─────────────────────────────────── */
+.paper-grain {
+  background-color: var(--paper);
+  background-image: radial-gradient(rgba(10,10,10,0.025) 1px, transparent 1px);
+  background-size: 3px 3px;
+}
+
+/* ─── Grid background ─────────────────────────────────────── */
+.grid-bg {
+  background-image:
+    linear-gradient(to right,  rgba(10,10,10,0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(10,10,10,0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* ─── Hover lift ──────────────────────────────────────────── */
+.lift {
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.lift:hover {
+  transform: translateY(-2px);
+  border-color: var(--ink);
+}
+
+/* ─── Animations ──────────────────────────────────────────── */
+@keyframes marquee    { from { transform: translateX(0); }     to { transform: translateX(-50%); } }
+@keyframes fill-in    { from { opacity:0; transform:scale(.92); } to { opacity:1; transform:scale(1); } }
+@keyframes screen-enter { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+
+.marquee      { animation: marquee 40s linear infinite; }
+.fill-in      { animation: fill-in .6s ease forwards; opacity: 0; }
+.screen-enter { animation: screen-enter .35s ease forwards; }
+
+/* ─── Scrollbar ───────────────────────────────────────────── */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--paper-2); }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
+
+/* ─── Legacy component aliases (keep existing screens working) */
 @layer components {
   .btn-primary {
-    @apply px-6 py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors duration-200 shadow-sm hover:shadow-md;
+    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all;
+    background: var(--ink);
+    color: var(--paper);
   }
+  .btn-primary:hover { opacity: .9; }
 
   .btn-secondary {
-    @apply px-6 py-3 bg-white text-gray-700 rounded-lg font-medium border border-gray-300 hover:bg-gray-50 transition-colors duration-200;
+    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all;
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
   }
+  .btn-secondary:hover { background: var(--paper-2); }
 
   .input-field {
-    @apply w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all duration-200;
+    @apply w-full px-3 py-2 rounded-md text-sm outline-none transition-all;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    color: var(--ink);
   }
+  .input-field:focus { border-color: var(--ink); }
 
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6;
-  }
-
-  .step-indicator {
-    @apply flex items-center justify-between mb-8;
+    @apply rounded-xl p-6;
+    background: var(--paper);
+    border: 1px solid var(--line);
   }
 
   .timetable-cell {
-    @apply border border-gray-200 p-3 rounded-lg hover:shadow-md transition-shadow cursor-pointer;
+    @apply rounded-lg p-3 transition-shadow cursor-pointer;
+    border: 1px solid var(--line);
   }
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  .timetable-cell:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
 }
