@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
 import { Btn, Eyebrow, Icon, TopBar } from '../ui/primitives';
-import DownloadModal from '../ui/DownloadModal';
+import toast from 'react-hot-toast';
+import { exportAllViewsToExcel, exportSelectedPDFs } from '../../utils/exportHelpers';
+import ExportModal from './ExportModal';
 
 const PALETTE = [
   '#0369A1', '#0F766E', '#7C3AED', '#B45309',
@@ -20,13 +22,9 @@ const NAV = [
 const StudentView: React.FC = () => {
   const navigate = useNavigate();
   const { generatedTimetable, institutionData } = useOnboardingStore();
-  const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [downloadFormat, setDownloadFormat]   = useState<'excel' | 'pdf'>('excel');
-
-  const openDownload = (fmt: 'excel' | 'pdf') => {
-    setDownloadFormat(fmt);
-    setShowDownloadModal(true);
-  };
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
 
   if (!generatedTimetable) {
     return (
@@ -58,6 +56,26 @@ const StudentView: React.FC = () => {
     grid[a.day][a.period] = a;
   });
 
+  const handleExportExcel = async () => {
+    setExportingExcel(true);
+    const tid = toast.loading('Generating Excel Sheets…');
+    try {
+      exportAllViewsToExcel(institutionData?.name || 'Timetable', assignments, working_days, time_slots);
+      toast.success('Downloaded!', { id: tid });
+    } catch { toast.error('Export failed', { id: tid }); } finally { setExportingExcel(false); }
+  };
+
+  const handleExportPdf = async (selections: any) => {
+    setIsPdfModalOpen(false);
+    setExportingPdf(true);
+    const tid = toast.loading('Generating PDFs…');
+    try {
+      await exportSelectedPDFs(institutionData?.name || 'Timetable', selections, assignments, working_days, time_slots);
+      toast.success('Downloaded!', { id: tid });
+    } catch {
+      toast.error('Failed to generate PDF archive', { id: tid });
+    } finally { setExportingPdf(false); }
+  };
 
   return (
     <div className="screen-enter">
@@ -66,8 +84,11 @@ const StudentView: React.FC = () => {
         crumbs={[institutionData?.name || 'School', selectedClass]}
         actions={
           <>
-            <Btn variant="ghost" size="sm" onClick={() => openDownload('excel')}>
-              <Icon name="dl" size={13} /> Excel
+            <Btn variant="ghost" size="sm" onClick={handleExportExcel} disabled={exportingExcel}>
+              <Icon name="dl" size={13} /> {exportingExcel ? 'Exporting…' : 'Excel'}
+            </Btn>
+            <Btn variant="ghost" size="sm" onClick={() => setIsPdfModalOpen(true)} disabled={exportingPdf}>
+              <Icon name="file" size={13} /> {exportingPdf ? 'Exporting…' : 'PDF'}
             </Btn>
             <Btn variant="ghost" size="sm" onClick={() => openDownload('pdf')}>
               <Icon name="file" size={13} /> PDF
@@ -158,15 +179,8 @@ const StudentView: React.FC = () => {
         </div>
       </div>
 
-      {/* Download modal */}
-      {showDownloadModal && (
-        <DownloadModal
-          format={downloadFormat}
-          onClose={() => setShowDownloadModal(false)}
-          timetableData={generatedTimetable}
-          institutionName={institutionData?.name || 'Timetable'}
-        />
-      )}
+      <style>{`@media print { body*{visibility:hidden} .screen-enter,.screen-enter *{visibility:visible} .screen-enter{position:absolute;left:0;top:0;width:100%} }`}</style>
+      <ExportModal isOpen={isPdfModalOpen} onClose={() => setIsPdfModalOpen(false)} onExport={handleExportPdf} />
     </div>
   );
 };

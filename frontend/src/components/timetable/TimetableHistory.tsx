@@ -46,11 +46,13 @@ const TimetableHistory: React.FC = () => {
   const {
     setInstitutionData, setClassesData, setSubjectsData, setTeachersData,
     setTimeData, setRoomsData, setConstraintsData, setGeneratedTimetable,
+    clearOnboardingData,
   } = useOnboardingStore();
 
   const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error,     setError]     = useState<string | null>(null);
 
   // Delete state
@@ -87,22 +89,22 @@ const TimetableHistory: React.FC = () => {
     } finally { setLoadingId(null); }
   };
 
-  const handleDelete = async (id: string, isLatest: boolean) => {
-    setDeletingId(id);
+  const handleDelete = async (id: string) => {
+    
     try {
       await snapshotsAPI.delete(id);
-      // Remove from local state
-      setSnapshots(prev => prev.filter(s => s.id !== id));
-      // If deleting the current active timetable, clear it from the store
-      if (isLatest) {
-        setGeneratedTimetable(null);
+      toast.success('Timetable deleted');
+      
+      // If the currently loaded timetable is the one being deleted, clear it from the frontend
+      const storeState = useOnboardingStore.getState();
+      if (storeState.generatedTimetable && storeState.generatedTimetable.id === id) {
+        clearOnboardingData();
       }
-      setConfirmDeleteId(null);
-      toast.success('Timetable deleted.');
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Delete failed.');
-    } finally {
-      setDeletingId(null);
+      
+      // Refresh list
+      fetchHistory();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to delete timetable.');
     }
   };
 
@@ -260,6 +262,70 @@ const TimetableHistory: React.FC = () => {
                         </div>
                       )}
                     </div>
+                    <p className="text-[12px] mono mb-4" style={{ color: 'var(--ink-3)' }}>
+                      {formatDate(snap.created_at)} · {relativeTime(snap.created_at)}
+                    </p>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {[
+                        { label: 'Assignments', v: snap.total_assignments },
+                        { label: 'Solve time',  v: snap.solve_time ? `${parseFloat(snap.solve_time).toFixed(1)}s` : '—' },
+                        { label: 'Subjects',    v: snap.subjects_count },
+                        { label: 'Teachers',    v: snap.teachers_count },
+                        { label: 'Rooms',       v: snap.rooms_count },
+                      ].map(s => (
+                        <div key={s.label} className="rounded-lg p-3 text-center"
+                          style={{ background: 'var(--paper-2)' }}>
+                          <div className="serif text-2xl leading-none mb-1">{s.v}</div>
+                          <div className="text-[10px] mono" style={{ color: 'var(--ink-3)' }}>{s.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <Btn
+                      variant={idx === 0 ? 'brand' : 'primary'}
+                      size="sm"
+                      disabled={loadingId === snap.id}
+                      onClick={() => handleLoad(snap.id)}
+                    >
+                      {loadingId === snap.id ? 'Loading…' : 'Load'}
+                    </Btn>
+                    <Btn variant="ghost" size="sm" onClick={() => navigate('/analytics')}>
+                      Analytics
+                    </Btn>
+                    {deletingId === snap.id ? (
+                      <div className="flex bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800/30 overflow-hidden">
+                        <Btn 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleDelete(snap.id)}
+                          className="rounded-none hover:bg-red-100 dark:hover:bg-red-900/50"
+                          style={{ color: 'var(--err)', borderRadius: 0, padding: '4px 8px' }}
+                        >
+                          Sure?
+                        </Btn>
+                        <Btn 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => setDeletingId(null)}
+                          className="rounded-none hover:bg-black/5 dark:hover:bg-white/5 border-l border-red-200 dark:border-red-800/30"
+                          style={{ color: 'var(--ink-2)', borderRadius: 0, padding: '4px 8px' }}
+                        >
+                          Cancel
+                        </Btn>
+                      </div>
+                    ) : (
+                      <Btn 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setDeletingId(snap.id)}
+                        style={{ color: 'var(--err)' }}
+                      >
+                        Delete
+                      </Btn>
+                    )}
                   </div>
                 </div>
               );
