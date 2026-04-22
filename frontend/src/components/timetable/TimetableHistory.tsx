@@ -55,10 +55,6 @@ const TimetableHistory: React.FC = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error,     setError]     = useState<string | null>(null);
 
-  // Delete state
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [deletingId,      setDeletingId]      = useState<string | null>(null);
-
   const fetchHistory = () => {
     setLoading(true); setError(null);
     snapshotsAPI.getHistory()

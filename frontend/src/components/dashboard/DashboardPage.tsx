@@ -148,10 +148,6 @@ const DashboardPage: React.FC = () => {
   const [exportingPdf, setExportingPdf] = useState(false);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
 
-  // Download modal state
-  const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [downloadFormat, setDownloadFormat] = useState<'excel' | 'pdf'>('excel');
-
   useEffect(() => {
     let cancelled = false;
     setLoading(true);

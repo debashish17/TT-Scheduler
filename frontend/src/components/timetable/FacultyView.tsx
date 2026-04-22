@@ -26,15 +26,6 @@ const FacultyView: React.FC = () => {
   const [exportingPdf, setExportingPdf] = useState(false);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [editingTeacher, setEditingTeacher] = useState<{ old: string } | null>(null);
-  const [editName, setEditName] = useState('');
-  const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [downloadFormat, setDownloadFormat]   = useState<'excel' | 'pdf'>('excel');
-
-  const openDownload = (fmt: 'excel' | 'pdf') => {
-    setDownloadFormat(fmt);
-    setShowDownloadModal(true);
-  };
 
   if (!generatedTimetable) {
     return (
