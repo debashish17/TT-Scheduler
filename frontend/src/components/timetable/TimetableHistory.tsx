@@ -46,11 +46,13 @@ const TimetableHistory: React.FC = () => {
   const {
     setInstitutionData, setClassesData, setSubjectsData, setTeachersData,
     setTimeData, setRoomsData, setConstraintsData, setGeneratedTimetable,
+    clearOnboardingData,
   } = useOnboardingStore();
 
   const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error,     setError]     = useState<string | null>(null);
 
   const fetchHistory = () => {
@@ -81,6 +83,25 @@ const TimetableHistory: React.FC = () => {
       navigate('/timetable');
     } catch { toast.error('Failed to load snapshot.');
     } finally { setLoadingId(null); }
+  };
+
+  const handleDelete = async (id: string) => {
+    
+    try {
+      await snapshotsAPI.delete(id);
+      toast.success('Timetable deleted');
+      
+      // If the currently loaded timetable is the one being deleted, clear it from the frontend
+      const storeState = useOnboardingStore.getState();
+      if (storeState.generatedTimetable && storeState.generatedTimetable.id === id) {
+        clearOnboardingData();
+      }
+      
+      // Refresh list
+      fetchHistory();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to delete timetable.');
+    }
   };
 
   return (
@@ -194,6 +215,37 @@ const TimetableHistory: React.FC = () => {
                     <Btn variant="ghost" size="sm" onClick={() => navigate('/analytics')}>
                       Analytics
                     </Btn>
+                    {deletingId === snap.id ? (
+                      <div className="flex bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800/30 overflow-hidden">
+                        <Btn 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleDelete(snap.id)}
+                          className="rounded-none hover:bg-red-100 dark:hover:bg-red-900/50"
+                          style={{ color: 'var(--err)', borderRadius: 0, padding: '4px 8px' }}
+                        >
+                          Sure?
+                        </Btn>
+                        <Btn 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => setDeletingId(null)}
+                          className="rounded-none hover:bg-black/5 dark:hover:bg-white/5 border-l border-red-200 dark:border-red-800/30"
+                          style={{ color: 'var(--ink-2)', borderRadius: 0, padding: '4px 8px' }}
+                        >
+                          Cancel
+                        </Btn>
+                      </div>
+                    ) : (
+                      <Btn 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setDeletingId(snap.id)}
+                        style={{ color: 'var(--err)' }}
+                      >
+                        Delete
+                      </Btn>
+                    )}
                   </div>
                 </div>
               </div>

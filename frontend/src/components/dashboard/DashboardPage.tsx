@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
 import { Btn, Eyebrow, Chip, Dot, Icon, TopBar } from '../ui/primitives';
 import { snapshotsAPI } from '../../api/client';
+import toast from 'react-hot-toast';
+import { exportAllViewsToExcel, exportSelectedPDFs } from '../../utils/exportHelpers';
+import ExportModal from '../timetable/ExportModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SnapshotSummary {
@@ -22,6 +25,9 @@ interface SnapshotSummary {
       solve_time_seconds?: number;
     };
   };
+  classes_data?: any[];
+  teachers_data?: any[];
+  rooms_data?: any[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -141,6 +147,10 @@ const DashboardPage: React.FC = () => {
   const [history, setHistory] = useState<SnapshotSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -180,6 +190,42 @@ const DashboardPage: React.FC = () => {
     ?? (latest?.solve_time != null ? parseFloat(String(latest.solve_time)) : undefined);
   const latestSolve = formatSolveTime(latestSolveRaw);
   const latestWhen = latest ? relativeTime(latest.created_at) : null;
+
+  const activeStudentsCount = latest?.classes_data 
+    ? latest.classes_data.reduce((sum, c) => sum + (Number(c.size) || 0), 0)
+    : 0;
+  const activeStudentsStr = activeStudentsCount > 0 ? activeStudentsCount.toLocaleString() : '—';
+  
+  const facultyCount = latest?.teachers_data?.length || 0;
+  const facultyStr = facultyCount > 0 ? facultyCount.toString() : '—';
+
+  const roomsCount = latest?.rooms_data?.length || 0;
+  const roomsStr = roomsCount > 0 ? roomsCount.toString() : '—';
+
+  const handleExportExcel = async () => {
+    if (!latest?.generated_timetable?.assignments) return;
+    setExportingExcel(true);
+    const tid = toast.loading('Generating Excel Sheets…');
+    try {
+      const { assignments, working_days, time_slots } = latest.generated_timetable as any;
+      exportAllViewsToExcel(latest.institution_name || 'Timetable', assignments, working_days, time_slots);
+      toast.success('Downloaded!', { id: tid });
+    } catch { toast.error('Export failed', { id: tid }); } finally { setExportingExcel(false); }
+  };
+
+  const handleExportPdf = async (selections: any) => {
+    if (!latest?.generated_timetable?.assignments) return;
+    setIsPdfModalOpen(false);
+    setExportingPdf(true);
+    const tid = toast.loading('Generating PDFs…');
+    try {
+      const { assignments, working_days, time_slots } = latest.generated_timetable as any;
+      await exportSelectedPDFs(latest.institution_name || 'Timetable', selections, assignments, working_days, time_slots);
+      toast.success('Downloaded!', { id: tid });
+    } catch {
+      toast.error('Failed to generate PDF archive', { id: tid });
+    } finally { setExportingPdf(false); }
+  };
 
   return (
     <div className="screen-enter">
@@ -240,8 +286,12 @@ const DashboardPage: React.FC = () => {
               </Btn>
               {latest && (
                 <>
-                  <Btn variant="ghost" size="sm"><Icon name="dl" size={13} /> Excel</Btn>
-                  <Btn variant="ghost" size="sm"><Icon name="file" size={13} /> PDF</Btn>
+                  <Btn variant="ghost" size="sm" onClick={handleExportExcel} disabled={exportingExcel}>
+                    <Icon name="dl" size={13} /> {exportingExcel ? 'Exporting…' : 'Excel'}
+                  </Btn>
+                  <Btn variant="ghost" size="sm" onClick={() => setIsPdfModalOpen(true)} disabled={exportingPdf}>
+                    <Icon name="file" size={13} /> {exportingPdf ? 'Exporting…' : 'PDF'}
+                  </Btn>
                   <Btn variant="ghost" size="sm"><Icon name="spark" size={13} /> Compare versions</Btn>
                 </>
               )}
@@ -286,9 +336,9 @@ const DashboardPage: React.FC = () => {
         {/* Stats strip */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-0 edge rounded-xl overflow-hidden mb-10" style={{ background: 'var(--paper)' }}>
           {[
-            { label: 'Active students', v: '1,240', d: '+46 this term' },
-            { label: 'Faculty',         v: '84',    d: '6 over-loaded' },
-            { label: 'Rooms',           v: '32',    d: '8 labs' },
+            { label: 'Active students', v: activeStudentsStr, d: latest ? 'latest run' : '—' },
+            { label: 'Faculty',         v: facultyStr,        d: latest ? 'latest run' : '—' },
+            { label: 'Rooms',           v: roomsStr,          d: latest ? 'latest run' : '—' },
             { label: 'Avg. solve time', v: latestSolve !== '—' ? latestSolve : '—', d: 'latest run' },
           ].map((s, i) => (
             <div key={s.label} className="p-5" style={{ borderRight: i < 3 ? '1px solid var(--line)' : undefined }}>
@@ -383,6 +433,7 @@ const DashboardPage: React.FC = () => {
           </div>
         </div>
       </div>
+      <ExportModal isOpen={isPdfModalOpen} onClose={() => setIsPdfModalOpen(false)} onExport={handleExportPdf} />
     </div>
   );
 };

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
-import { simpleTimetableAPI } from '../../api/client';
 import { Btn, Eyebrow, Icon, TopBar } from '../ui/primitives';
 import toast from 'react-hot-toast';
+import { exportAllViewsToExcel, exportSelectedPDFs } from '../../utils/exportHelpers';
+import ExportModal from './ExportModal';
 
 const NAV = [
   { id: 'timetable',    label: 'Class',     path: '/timetable'    },
@@ -73,7 +74,9 @@ const AnalyticsView: React.FC = () => {
   const { generatedTimetable, institutionData } = useOnboardingStore();
   const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
 
   useEffect(() => {
     if (!generatedTimetable) return;
@@ -98,16 +101,26 @@ const AnalyticsView: React.FC = () => {
   }
 
   const handleExportExcel = async () => {
-    setExporting(true);
-    const tid = toast.loading('Generating Excel…');
+    setExportingExcel(true);
+    const tid = toast.loading('Generating Excel Sheets…');
     try {
-      const { assignments, working_days, time_slots, stats } = generatedTimetable as any;
-      const res = await simpleTimetableAPI.exportExcel({ institution_name: institutionData?.name || 'Timetable', assignments, working_days, time_slots, stats });
-      const url = URL.createObjectURL(res.data);
-      const a = document.createElement('a'); a.href = url; a.download = `${(institutionData?.name || 'Timetable').replace(/ /g, '_')}.xlsx`;
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      const { assignments, working_days, time_slots } = generatedTimetable as any;
+      exportAllViewsToExcel(institutionData?.name || 'Timetable', assignments, working_days, time_slots);
       toast.success('Downloaded!', { id: tid });
-    } catch { toast.error('Export failed', { id: tid }); } finally { setExporting(false); }
+    } catch { toast.error('Export failed', { id: tid }); } finally { setExportingExcel(false); }
+  };
+
+  const handleExportPdf = async (selections: any) => {
+    setIsPdfModalOpen(false);
+    setExportingPdf(true);
+    const tid = toast.loading('Generating PDFs…');
+    try {
+      const { assignments, working_days, time_slots } = generatedTimetable as any;
+      await exportSelectedPDFs(institutionData?.name || 'Timetable', selections, assignments, working_days, time_slots);
+      toast.success('Downloaded!', { id: tid });
+    } catch {
+      toast.error('Failed to generate PDF archive', { id: tid });
+    } finally { setExportingPdf(false); }
   };
 
   return (
@@ -117,8 +130,11 @@ const AnalyticsView: React.FC = () => {
         crumbs={[institutionData?.name || 'School', 'Analytics']}
         actions={
           <>
-            <Btn variant="ghost" size="sm" onClick={handleExportExcel} disabled={exporting}>
-              <Icon name="dl" size={13} /> {exporting ? 'Exporting…' : 'Excel'}
+            <Btn variant="ghost" size="sm" onClick={handleExportExcel} disabled={exportingExcel}>
+              <Icon name="dl" size={13} /> {exportingExcel ? 'Exporting…' : 'Excel'}
+            </Btn>
+            <Btn variant="ghost" size="sm" onClick={() => setIsPdfModalOpen(true)} disabled={exportingPdf}>
+              <Icon name="file" size={13} /> {exportingPdf ? 'Exporting…' : 'PDF'}
             </Btn>
           </>
         }
@@ -269,6 +285,7 @@ const AnalyticsView: React.FC = () => {
           </>
         )}
       </div>
+      <ExportModal isOpen={isPdfModalOpen} onClose={() => setIsPdfModalOpen(false)} onExport={handleExportPdf} />
     </div>
   );
 };

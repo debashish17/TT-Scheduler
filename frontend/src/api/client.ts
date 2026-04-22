@@ -346,6 +346,9 @@ export const snapshotsAPI = {
 
   /** Load a specific historical snapshot by ID */
   getById: (id: string) => apiClient.get(`/snapshots/${id}`),
+
+  /** Delete a specific snapshot by ID */
+  delete: (id: string) => apiClient.delete(`/snapshots/${id}`),
 };
 
 // Export base URLs for WebSocket and other purposes
