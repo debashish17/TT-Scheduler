@@ -275,7 +275,7 @@ const DashboardPage: React.FC = () => {
               <Btn variant="brand" size="sm" onClick={() => navigate(latest ? '/timetable' : '/wizard')}>
                 <Icon name="grid" size={13} /> {latest ? 'Open timetable' : 'Create timetable'}
               </Btn>
-              {latest && activeTimetable && (
+              {latest && latest.generated_timetable?.assignments && (
                 <>
                   <Btn variant="ghost" size="sm" onClick={handleExportExcel} disabled={exportingExcel}>
                     <Icon name="dl" size={13} /> {exportingExcel ? 'Exporting…' : 'Excel'}
