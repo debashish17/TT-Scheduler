@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
+import { simpleTimetableAPI } from '../../api/client';
 import { Btn, Eyebrow, Icon, TopBar } from '../ui/primitives';
 import toast from 'react-hot-toast';
 import { exportAllViewsToExcel, exportSelectedPDFs } from '../../utils/exportHelpers';
