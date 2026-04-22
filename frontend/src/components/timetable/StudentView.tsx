@@ -90,9 +90,6 @@ const StudentView: React.FC = () => {
             <Btn variant="ghost" size="sm" onClick={() => setIsPdfModalOpen(true)} disabled={exportingPdf}>
               <Icon name="file" size={13} /> {exportingPdf ? 'Exporting…' : 'PDF'}
             </Btn>
-            <Btn variant="ghost" size="sm" onClick={() => openDownload('pdf')}>
-              <Icon name="file" size={13} /> PDF
-            </Btn>
           </>
         }
       />
