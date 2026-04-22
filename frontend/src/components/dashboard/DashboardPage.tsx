@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
 import { Btn, Eyebrow, Chip, Dot, Icon, TopBar } from '../ui/primitives';
 import { snapshotsAPI } from '../../api/client';
-import DownloadModal from '../ui/DownloadModal';
+import toast from 'react-hot-toast';
+import { exportAllViewsToExcel, exportSelectedPDFs } from '../../utils/exportHelpers';
+import ExportModal from '../timetable/ExportModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SnapshotSummary {
@@ -26,6 +28,9 @@ interface SnapshotSummary {
       solve_time_seconds?: number;
     };
   };
+  classes_data?: any[];
+  teachers_data?: any[];
+  rooms_data?: any[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -138,10 +143,10 @@ const DashboardPage: React.FC = () => {
   const [history, setHistory] = useState<SnapshotSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-
-  // Download modal state
-  const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [downloadFormat, setDownloadFormat] = useState<'excel' | 'pdf'>('excel');
+  
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,20 +182,40 @@ const DashboardPage: React.FC = () => {
   const latestSolve = formatSolveTime(latestSolveRaw);
   const latestWhen = latest ? relativeTime(latest.created_at) : null;
 
-  // Real stats from latest snapshot
-  const latestStudents = latest?.classes_data
-    ? latest.classes_data.reduce((sum: number, c: any) => sum + (parseInt(c.size) || 30), 0)
-    : null;
-  const latestFaculty = latest?.teachers_data?.length ?? null;
-  const latestRooms   = latest?.rooms_data?.length ?? null;
-  const latestClasses = latest?.classes_data?.length ?? null;
+  const activeStudentsCount = latest?.classes_data 
+    ? latest.classes_data.reduce((sum, c) => sum + (Number(c.size) || 0), 0)
+    : 0;
+  const activeStudentsStr = activeStudentsCount > 0 ? activeStudentsCount.toLocaleString() : '—';
+  
+  const facultyCount = latest?.teachers_data?.length || 0;
+  const facultyStr = facultyCount > 0 ? facultyCount.toString() : '—';
 
-  // Active timetable data (for download modal)
-  const activeTimetable = generatedTimetable ?? latest?.generated_timetable ?? null;
+  const roomsCount = latest?.rooms_data?.length || 0;
+  const roomsStr = roomsCount > 0 ? roomsCount.toString() : '—';
 
-  const openDownload = (fmt: 'excel' | 'pdf') => {
-    setDownloadFormat(fmt);
-    setShowDownloadModal(true);
+  const handleExportExcel = async () => {
+    if (!latest?.generated_timetable?.assignments) return;
+    setExportingExcel(true);
+    const tid = toast.loading('Generating Excel Sheets…');
+    try {
+      const { assignments, working_days, time_slots } = latest.generated_timetable as any;
+      exportAllViewsToExcel(latest.institution_name || 'Timetable', assignments, working_days, time_slots);
+      toast.success('Downloaded!', { id: tid });
+    } catch { toast.error('Export failed', { id: tid }); } finally { setExportingExcel(false); }
+  };
+
+  const handleExportPdf = async (selections: any) => {
+    if (!latest?.generated_timetable?.assignments) return;
+    setIsPdfModalOpen(false);
+    setExportingPdf(true);
+    const tid = toast.loading('Generating PDFs…');
+    try {
+      const { assignments, working_days, time_slots } = latest.generated_timetable as any;
+      await exportSelectedPDFs(latest.institution_name || 'Timetable', selections, assignments, working_days, time_slots);
+      toast.success('Downloaded!', { id: tid });
+    } catch {
+      toast.error('Failed to generate PDF archive', { id: tid });
+    } finally { setExportingPdf(false); }
   };
 
   return (
@@ -250,17 +275,15 @@ const DashboardPage: React.FC = () => {
               <Btn variant="brand" size="sm" onClick={() => navigate(latest ? '/timetable' : '/wizard')}>
                 <Icon name="grid" size={13} /> {latest ? 'Open timetable' : 'Create timetable'}
               </Btn>
-              {latest && activeTimetable && (
+              {latest && latest.generated_timetable?.assignments && (
                 <>
-                  <Btn variant="ghost" size="sm" onClick={() => openDownload('excel')}>
-                    <Icon name="dl" size={13} /> Excel
+                  <Btn variant="ghost" size="sm" onClick={handleExportExcel} disabled={exportingExcel}>
+                    <Icon name="dl" size={13} /> {exportingExcel ? 'Exporting…' : 'Excel'}
                   </Btn>
-                  <Btn variant="ghost" size="sm" onClick={() => openDownload('pdf')}>
-                    <Icon name="file" size={13} /> PDF
+                  <Btn variant="ghost" size="sm" onClick={() => setIsPdfModalOpen(true)} disabled={exportingPdf}>
+                    <Icon name="file" size={13} /> {exportingPdf ? 'Exporting…' : 'PDF'}
                   </Btn>
-                  <Btn variant="ghost" size="sm">
-                    <Icon name="spark" size={13} /> Compare versions
-                  </Btn>
+                  <Btn variant="ghost" size="sm"><Icon name="spark" size={13} /> Compare versions</Btn>
                 </>
               )}
             </div>
@@ -304,26 +327,10 @@ const DashboardPage: React.FC = () => {
         {/* Stats strip — real values from latest snapshot */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-0 edge rounded-xl overflow-hidden mb-10" style={{ background: 'var(--paper)' }}>
           {[
-            {
-              label: 'Active students',
-              v: latestStudents != null ? latestStudents.toLocaleString() : '—',
-              d: latestClasses != null ? `${latestClasses} class${latestClasses !== 1 ? 'es' : ''}` : 'no data yet',
-            },
-            {
-              label: 'Faculty',
-              v: latestFaculty != null ? String(latestFaculty) : '—',
-              d: 'from latest run',
-            },
-            {
-              label: 'Rooms',
-              v: latestRooms != null ? String(latestRooms) : '—',
-              d: 'from latest run',
-            },
-            {
-              label: 'Avg. solve time',
-              v: latestSolve !== '—' ? latestSolve : '—',
-              d: 'latest run',
-            },
+            { label: 'Active students', v: activeStudentsStr, d: latest ? 'latest run' : '—' },
+            { label: 'Faculty',         v: facultyStr,        d: latest ? 'latest run' : '—' },
+            { label: 'Rooms',           v: roomsStr,          d: latest ? 'latest run' : '—' },
+            { label: 'Avg. solve time', v: latestSolve !== '—' ? latestSolve : '—', d: 'latest run' },
           ].map((s, i) => (
             <div key={s.label} className="p-5" style={{ borderRight: i < 3 ? '1px solid var(--line)' : undefined }}>
               <div className="eyebrow mb-2" style={{ color: 'var(--ink-3)' }}>{s.label}</div>
@@ -415,16 +422,7 @@ const DashboardPage: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* Download modal */}
-      {showDownloadModal && activeTimetable && (
-        <DownloadModal
-          format={downloadFormat}
-          onClose={() => setShowDownloadModal(false)}
-          timetableData={activeTimetable}
-          institutionName={inst}
-        />
-      )}
+      <ExportModal isOpen={isPdfModalOpen} onClose={() => setIsPdfModalOpen(false)} onExport={handleExportPdf} />
     </div>
   );
 };

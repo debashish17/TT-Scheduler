@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
-import { Btn, Eyebrow, Chip, Icon, TopBar } from '../ui/primitives';
+import { Btn, Eyebrow, Icon, TopBar } from '../ui/primitives';
 import toast from 'react-hot-toast';
-import DownloadModal from '../ui/DownloadModal';
+import { exportAllViewsToExcel, exportSelectedPDFs } from '../../utils/exportHelpers';
+import ExportModal from './ExportModal';
 
 const PALETTE = [
   '#0369A1', '#0F766E', '#7C3AED', '#B45309',
@@ -20,18 +21,11 @@ const NAV = [
 
 const FacultyView: React.FC = () => {
   const navigate = useNavigate();
-  const { generatedTimetable, setGeneratedTimetable, institutionData } = useOnboardingStore();
-  const [exporting, setExporting] = useState(false);
+  const { generatedTimetable, institutionData } = useOnboardingStore();
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [editingTeacher, setEditingTeacher] = useState<{ old: string } | null>(null);
-  const [editName, setEditName] = useState('');
-  const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [downloadFormat, setDownloadFormat]   = useState<'excel' | 'pdf'>('excel');
-
-  const openDownload = (fmt: 'excel' | 'pdf') => {
-    setDownloadFormat(fmt);
-    setShowDownloadModal(true);
-  };
 
   if (!generatedTimetable) {
     return (
@@ -47,7 +41,7 @@ const FacultyView: React.FC = () => {
     );
   }
 
-  const { assignments = [], working_days = [], time_slots = [], stats = {} }: any = generatedTimetable;
+  const { assignments = [], working_days = [], time_slots = [] }: any = generatedTimetable;
   const allSubjects: string[] = [...new Set((assignments as any[]).map((a: any) => a.subject_code))] as string[];
   const subjectColor: Record<string, string> = {};
   allSubjects.forEach((c, i) => { subjectColor[c] = PALETTE[i % PALETTE.length]; });
@@ -61,17 +55,26 @@ const FacultyView: React.FC = () => {
   (working_days as string[]).forEach(d => { grid[d] = {}; });
   teacherAssignments.forEach((a: any) => { if (!grid[a.day]) grid[a.day] = {}; grid[a.day][a.period] = a; });
 
-  const handleRename = (newName: string) => {
-    if (!newName || newName === editingTeacher?.old) { setEditingTeacher(null); return; }
-    const updated = (assignments as any[]).map((a: any) =>
-      a.teacher_name === editingTeacher?.old ? { ...a, teacher_name: newName } : a
-    );
-    setGeneratedTimetable({ ...generatedTimetable, assignments: updated });
-    if (selectedTeacher === editingTeacher?.old) setSelectedTeacher(newName);
-    setEditingTeacher(null);
-    toast.success(`Renamed to ${newName}`);
+  const handleExportExcel = async () => {
+    setExportingExcel(true);
+    const tid = toast.loading('Generating Excel Sheets…');
+    try {
+      exportAllViewsToExcel(institutionData?.name || 'Timetable', assignments, working_days, time_slots);
+      toast.success('Downloaded!', { id: tid });
+    } catch { toast.error('Export failed', { id: tid }); } finally { setExportingExcel(false); }
   };
 
+  const handleExportPdf = async (selections: any) => {
+    setIsPdfModalOpen(false);
+    setExportingPdf(true);
+    const tid = toast.loading('Generating PDFs…');
+    try {
+      await exportSelectedPDFs(institutionData?.name || 'Timetable', selections, assignments, working_days, time_slots);
+      toast.success('Downloaded!', { id: tid });
+    } catch {
+      toast.error('Failed to generate PDF archive', { id: tid });
+    } finally { setExportingPdf(false); }
+  };
 
   return (
     <div className="screen-enter">
@@ -80,11 +83,11 @@ const FacultyView: React.FC = () => {
         crumbs={[institutionData?.name || 'School', 'Faculty view']}
         actions={
           <>
-            <Btn variant="ghost" size="sm" onClick={() => openDownload('excel')}>
-              <Icon name="dl" size={13} /> Excel
+            <Btn variant="ghost" size="sm" onClick={handleExportExcel} disabled={exportingExcel}>
+              <Icon name="dl" size={13} /> {exportingExcel ? 'Exporting…' : 'Excel'}
             </Btn>
-            <Btn variant="ghost" size="sm" onClick={() => openDownload('pdf')}>
-              <Icon name="file" size={13} /> PDF
+            <Btn variant="ghost" size="sm" onClick={() => setIsPdfModalOpen(true)} disabled={exportingPdf}>
+              <Icon name="file" size={13} /> {exportingPdf ? 'Exporting…' : 'PDF'}
             </Btn>
           </>
         }
@@ -155,25 +158,6 @@ const FacultyView: React.FC = () => {
                     <span style={{ color: 'var(--ink-3)' }}>Classes </span>
                     <strong>{[...new Set(teacherAssignments.map((a: any) => a.class_name))].join(', ')}</strong>
                   </div>
-                  <button className="ml-auto text-[12px] underline underline-offset-4"
-                    style={{ color: 'var(--ink-3)' }}
-                    onClick={() => { setEditingTeacher({ old: selectedTeacher }); setEditName(selectedTeacher); }}>
-                    Rename
-                  </button>
-                </div>
-              )}
-              {editingTeacher && (
-                <div className="flex items-center gap-2 mt-3">
-                  <input
-                    autoFocus
-                    value={editName}
-                    onChange={e => setEditName(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleRename(editName)}
-                    className="px-3 py-2 rounded-md text-sm flex-1 outline-none"
-                    style={{ background: 'var(--paper)', border: '1px solid var(--ink)', color: 'var(--ink)' }}
-                  />
-                  <Btn variant="primary" size="sm" onClick={() => handleRename(editName)}>Save</Btn>
-                  <Btn variant="ghost" size="sm" onClick={() => setEditingTeacher(null)}>Cancel</Btn>
                 </div>
               )}
             </div>
@@ -268,15 +252,8 @@ const FacultyView: React.FC = () => {
         )}
       </div>
 
-      {/* Download modal */}
-      {showDownloadModal && (
-        <DownloadModal
-          format={downloadFormat}
-          onClose={() => setShowDownloadModal(false)}
-          timetableData={generatedTimetable}
-          institutionName={institutionData?.name || 'Timetable'}
-        />
-      )}
+      <style>{`@media print { body*{visibility:hidden} .screen-enter,.screen-enter *{visibility:visible} .screen-enter{position:absolute;left:0;top:0;width:100%} }`}</style>
+      <ExportModal isOpen={isPdfModalOpen} onClose={() => setIsPdfModalOpen(false)} onExport={handleExportPdf} />
     </div>
   );
 };

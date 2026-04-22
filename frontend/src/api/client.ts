@@ -347,7 +347,7 @@ export const snapshotsAPI = {
   /** Load a specific historical snapshot by ID */
   getById: (id: string) => apiClient.get(`/snapshots/${id}`),
 
-  /** Permanently delete a snapshot by ID */
+  /** Delete a specific snapshot by ID */
   delete: (id: string) => apiClient.delete(`/snapshots/${id}`),
 };
 

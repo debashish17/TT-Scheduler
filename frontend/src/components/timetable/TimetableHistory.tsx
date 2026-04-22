@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { snapshotsAPI } from '../../api/client';
 import { useOnboardingStore } from '../../store';
-import { Btn, Eyebrow, Chip, Dot, Icon, TopBar } from '../ui/primitives';
+import { Btn, Chip, Dot, Icon, TopBar } from '../ui/primitives';
 import toast from 'react-hot-toast';
 
 interface SnapshotSummary {
@@ -46,16 +46,14 @@ const TimetableHistory: React.FC = () => {
   const {
     setInstitutionData, setClassesData, setSubjectsData, setTeachersData,
     setTimeData, setRoomsData, setConstraintsData, setGeneratedTimetable,
+    clearOnboardingData,
   } = useOnboardingStore();
 
   const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error,     setError]     = useState<string | null>(null);
-
-  // Delete state
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [deletingId,      setDeletingId]      = useState<string | null>(null);
 
   const fetchHistory = () => {
     setLoading(true); setError(null);
@@ -87,20 +85,17 @@ const TimetableHistory: React.FC = () => {
     } finally { setLoadingId(null); }
   };
 
-  const handleDelete = async (id: string, isLatest: boolean) => {
-    setDeletingId(id);
+  const handleDelete = async (id: string) => {
     try {
       await snapshotsAPI.delete(id);
-      // Remove from local state
-      setSnapshots(prev => prev.filter(s => s.id !== id));
-      // If deleting the current active timetable, clear it from the store
-      if (isLatest) {
-        setGeneratedTimetable(null);
+      toast.success('Timetable deleted');
+      const storeState = useOnboardingStore.getState();
+      if (storeState.generatedTimetable && (storeState.generatedTimetable as any).id === id) {
+        clearOnboardingData();
       }
-      setConfirmDeleteId(null);
-      toast.success('Timetable deleted.');
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Delete failed.');
+      fetchHistory();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Failed to delete timetable.');
     } finally {
       setDeletingId(null);
     }
@@ -164,106 +159,92 @@ const TimetableHistory: React.FC = () => {
 
         {!loading && !error && snapshots.length > 0 && (
           <div className="space-y-3">
-            {snapshots.map((snap, idx) => {
-              const isLatest   = idx === 0;
-              const isConfirm  = confirmDeleteId === snap.id;
-              const isDeleting = deletingId === snap.id;
-
-              return (
-                <div
-                  key={snap.id}
-                  className="edge rounded-xl p-6 transition-shadow"
-                  style={{
-                    background: 'var(--paper)',
-                    boxShadow: isLatest ? '0 0 0 1.5px var(--brand)' : undefined,
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <h3 className="font-semibold truncate">
-                          {snap.institution_name || 'Untitled'}
-                        </h3>
-                        {isLatest && <Chip tone="ok"><Dot color="var(--ok)" /> latest</Chip>}
-                        {snap.solver && (
-                          <Chip tone="neutral">{snap.solver}</Chip>
-                        )}
-                      </div>
-                      <p className="text-[12px] mono mb-4" style={{ color: 'var(--ink-3)' }}>
-                        {formatDate(snap.created_at)} · {relativeTime(snap.created_at)}
-                      </p>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                        {[
-                          { label: 'Assignments', v: snap.total_assignments },
-                          { label: 'Solve time',  v: snap.solve_time ? `${parseFloat(snap.solve_time).toFixed(1)}s` : '—' },
-                          { label: 'Subjects',    v: snap.subjects_count },
-                          { label: 'Teachers',    v: snap.teachers_count },
-                          { label: 'Rooms',       v: snap.rooms_count },
-                        ].map(s => (
-                          <div key={s.label} className="rounded-lg p-3 text-center"
-                            style={{ background: 'var(--paper-2)' }}>
-                            <div className="serif text-2xl leading-none mb-1">{s.v}</div>
-                            <div className="text-[10px] mono" style={{ color: 'var(--ink-3)' }}>{s.label}</div>
-                          </div>
-                        ))}
-                      </div>
+            {snapshots.map((snap, idx) => (
+              <div
+                key={snap.id}
+                className="edge rounded-xl p-6 transition-shadow"
+                style={{
+                  background: 'var(--paper)',
+                  boxShadow: idx === 0 ? '0 0 0 1.5px var(--brand)' : undefined,
+                }}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <h3 className="font-semibold truncate">
+                        {snap.institution_name || 'Untitled'}
+                      </h3>
+                      {idx === 0 && <Chip tone="ok"><Dot color="var(--ok)" /> latest</Chip>}
+                      {snap.solver && (
+                        <Chip tone="neutral">{snap.solver}</Chip>
+                      )}
                     </div>
+                    <p className="text-[12px] mono mb-4" style={{ color: 'var(--ink-3)' }}>
+                      {formatDate(snap.created_at)} · {relativeTime(snap.created_at)}
+                    </p>
 
-                    {/* Actions column */}
-                    <div className="flex flex-col gap-2 shrink-0">
-                      <Btn
-                        variant={isLatest ? 'brand' : 'primary'}
-                        size="sm"
-                        disabled={loadingId === snap.id}
-                        onClick={() => handleLoad(snap.id)}
-                      >
-                        {loadingId === snap.id ? 'Loading…' : 'Load'}
-                      </Btn>
-                      <Btn variant="ghost" size="sm" onClick={() => navigate('/analytics')}>
-                        Analytics
-                      </Btn>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {[
+                        { label: 'Assignments', v: snap.total_assignments },
+                        { label: 'Solve time',  v: snap.solve_time ? `${parseFloat(snap.solve_time).toFixed(1)}s` : '—' },
+                        { label: 'Subjects',    v: snap.subjects_count },
+                        { label: 'Teachers',    v: snap.teachers_count },
+                        { label: 'Rooms',       v: snap.rooms_count },
+                      ].map(s => (
+                        <div key={s.label} className="rounded-lg p-3 text-center"
+                          style={{ background: 'var(--paper-2)' }}>
+                          <div className="serif text-2xl leading-none mb-1">{s.v}</div>
+                          <div className="text-[10px] mono" style={{ color: 'var(--ink-3)' }}>{s.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
-                      {/* Delete / Confirm row */}
-                      {!isConfirm ? (
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <Btn
+                      variant={idx === 0 ? 'brand' : 'primary'}
+                      size="sm"
+                      disabled={loadingId === snap.id}
+                      onClick={() => handleLoad(snap.id)}
+                    >
+                      {loadingId === snap.id ? 'Loading…' : 'Load'}
+                    </Btn>
+                    <Btn variant="ghost" size="sm" onClick={() => navigate('/analytics')}>
+                      Analytics
+                    </Btn>
+                    {deletingId === snap.id ? (
+                      <div className="flex bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800/30 overflow-hidden">
                         <Btn
                           variant="ghost"
                           size="sm"
-                          disabled={isDeleting}
-                          onClick={() => setConfirmDeleteId(snap.id)}
+                          onClick={() => handleDelete(snap.id)}
+                          style={{ color: 'var(--err)', borderRadius: 0, padding: '4px 8px' }}
                         >
-                          <Icon name="x" size={12} /> Delete
+                          Sure?
                         </Btn>
-                      ) : (
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-[11px] mono text-center" style={{ color: 'var(--err)' }}>
-                            Delete this timetable?
-                          </span>
-                          <div className="flex gap-1.5">
-                            <button
-                              onClick={() => handleDelete(snap.id, isLatest)}
-                              disabled={isDeleting}
-                              className="flex-1 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors"
-                              style={{ background: 'var(--err)', color: '#fff', opacity: isDeleting ? 0.6 : 1 }}
-                            >
-                              {isDeleting ? '…' : 'Yes'}
-                            </button>
-                            <button
-                              onClick={() => setConfirmDeleteId(null)}
-                              disabled={isDeleting}
-                              className="flex-1 px-2 py-1 rounded-md text-[11px] font-semibold transition-colors"
-                              style={{ background: 'var(--paper-2)', color: 'var(--ink-2)' }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                        <Btn
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeletingId(null)}
+                          style={{ color: 'var(--ink-2)', borderRadius: 0, padding: '4px 8px' }}
+                        >
+                          Cancel
+                        </Btn>
+                      </div>
+                    ) : (
+                      <Btn
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeletingId(snap.id)}
+                        style={{ color: 'var(--err)' }}
+                      >
+                        Delete
+                      </Btn>
+                    )}
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
 
             <p className="text-center text-[11px] mono py-2" style={{ color: 'var(--ink-3)' }}>
               {snapshots.length} timetable{snapshots.length !== 1 ? 's' : ''} — history is per account
