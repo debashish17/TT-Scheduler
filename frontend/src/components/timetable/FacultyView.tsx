@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
-import { Btn, Eyebrow, Chip, Icon, TopBar } from '../ui/primitives';
+import { Btn, Eyebrow, Icon, TopBar } from '../ui/primitives';
 import toast from 'react-hot-toast';
 import { exportAllViewsToExcel, exportSelectedPDFs } from '../../utils/exportHelpers';
 import ExportModal from './ExportModal';
@@ -21,7 +21,7 @@ const NAV = [
 
 const FacultyView: React.FC = () => {
   const navigate = useNavigate();
-  const { generatedTimetable, setGeneratedTimetable, institutionData } = useOnboardingStore();
+  const { generatedTimetable, institutionData } = useOnboardingStore();
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
@@ -41,7 +41,7 @@ const FacultyView: React.FC = () => {
     );
   }
 
-  const { assignments = [], working_days = [], time_slots = [], stats = {} }: any = generatedTimetable;
+  const { assignments = [], working_days = [], time_slots = [] }: any = generatedTimetable;
   const allSubjects: string[] = [...new Set((assignments as any[]).map((a: any) => a.subject_code))] as string[];
   const subjectColor: Record<string, string> = {};
   allSubjects.forEach((c, i) => { subjectColor[c] = PALETTE[i % PALETTE.length]; });
@@ -54,17 +54,6 @@ const FacultyView: React.FC = () => {
   const grid: Record<string, Record<number, any>> = {};
   (working_days as string[]).forEach(d => { grid[d] = {}; });
   teacherAssignments.forEach((a: any) => { if (!grid[a.day]) grid[a.day] = {}; grid[a.day][a.period] = a; });
-
-  const handleRename = (newName: string) => {
-    if (!newName || newName === editingTeacher?.old) { setEditingTeacher(null); return; }
-    const updated = (assignments as any[]).map((a: any) =>
-      a.teacher_name === editingTeacher?.old ? { ...a, teacher_name: newName } : a
-    );
-    setGeneratedTimetable({ ...generatedTimetable, assignments: updated });
-    if (selectedTeacher === editingTeacher?.old) setSelectedTeacher(newName);
-    setEditingTeacher(null);
-    toast.success(`Renamed to ${newName}`);
-  };
 
   const handleExportExcel = async () => {
     setExportingExcel(true);
@@ -99,9 +88,6 @@ const FacultyView: React.FC = () => {
             </Btn>
             <Btn variant="ghost" size="sm" onClick={() => setIsPdfModalOpen(true)} disabled={exportingPdf}>
               <Icon name="file" size={13} /> {exportingPdf ? 'Exporting…' : 'PDF'}
-            </Btn>
-            <Btn variant="ghost" size="sm" onClick={() => openDownload('pdf')}>
-              <Icon name="file" size={13} /> PDF
             </Btn>
           </>
         }
@@ -172,25 +158,6 @@ const FacultyView: React.FC = () => {
                     <span style={{ color: 'var(--ink-3)' }}>Classes </span>
                     <strong>{[...new Set(teacherAssignments.map((a: any) => a.class_name))].join(', ')}</strong>
                   </div>
-                  <button className="ml-auto text-[12px] underline underline-offset-4"
-                    style={{ color: 'var(--ink-3)' }}
-                    onClick={() => { setEditingTeacher({ old: selectedTeacher }); setEditName(selectedTeacher); }}>
-                    Rename
-                  </button>
-                </div>
-              )}
-              {editingTeacher && (
-                <div className="flex items-center gap-2 mt-3">
-                  <input
-                    autoFocus
-                    value={editName}
-                    onChange={e => setEditName(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleRename(editName)}
-                    className="px-3 py-2 rounded-md text-sm flex-1 outline-none"
-                    style={{ background: 'var(--paper)', border: '1px solid var(--ink)', color: 'var(--ink)' }}
-                  />
-                  <Btn variant="primary" size="sm" onClick={() => handleRename(editName)}>Save</Btn>
-                  <Btn variant="ghost" size="sm" onClick={() => setEditingTeacher(null)}>Cancel</Btn>
                 </div>
               )}
             </div>
