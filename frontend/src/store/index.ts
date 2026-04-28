@@ -350,6 +350,66 @@ export const useOnboardingStore = create<any>()(
       generatedTimetable: null,
       timetableError: null,
 
+      // ── College-specific fields ──
+      collegeInstitution: null as {
+        name: string;
+        semester: number;
+        departments: { code: string; name: string }[];
+      } | null,
+
+      courseOfferings: [] as Array<{
+        code: string;
+        name: string;
+        department: string;
+        year: number;
+        credits: number;
+        enrolled_students: number;
+        is_elective: boolean;
+        required_lecture_room_type: string;
+        required_lab_room_type: string | null;
+      }>,
+
+      collegeFaculty: [] as Array<{
+        code: string;
+        name: string;
+        department: string;
+        courses_can_teach: string[];
+        max_hours_per_week: number;
+      }>,
+
+      collegeRooms: [] as Array<{
+        name: string;
+        capacity: number;
+        room_type: string;
+      }>,
+
+      collegeSchedule: null as {
+        workingDays: string[];
+        periodsPerDay: number;
+        periodDurationMinutes: number;
+        startTime: string;
+        lunchPeriodIndex: number;
+      } | null,
+
+      collegeConstraints: null as {
+        maxConsecutivePeriods: number;
+        maxPeriodsPerDayPerFaculty: number;
+      } | null,
+
+      softConstraintsSchool: [] as Array<{
+        type: string;
+        target: string;
+        when: string | null;
+        weight: number;
+      }>,
+
+      softConstraintsCollege: [] as Array<{
+        type: string;
+        target: string;
+        when: string | null;
+        weight: number;
+      }>,
+
       setUserId: (id: string | null) => set({ userId: id }),
       setInstitutionData: (data) => set({ institutionData: data }),
       setWorkflowData: (data) => set({ workflowData: data }),
@@ -362,6 +422,16 @@ export const useOnboardingStore = create<any>()(
       setConstraintsData: (data) => set({ constraintsData: data }),
       setGeneratedTimetable: (data) => set({ generatedTimetable: data, timetableError: null }),
       setTimetableError: (error) => set({ timetableError: error, generatedTimetable: null }),
+
+      // ── College setters ──
+      setCollegeInstitution: (data) => set({ collegeInstitution: data }),
+      setCourseOfferings: (data) => set({ courseOfferings: data }),
+      setCollegeFaculty: (data) => set({ collegeFaculty: data }),
+      setCollegeRooms: (data) => set({ collegeRooms: data }),
+      setCollegeSchedule: (data) => set({ collegeSchedule: data }),
+      setCollegeConstraints: (data) => set({ collegeConstraints: data }),
+      setSoftConstraintsSchool: (data) => set({ softConstraintsSchool: data }),
+      setSoftConstraintsCollege: (data) => set({ softConstraintsCollege: data }),
 
       clearOnboardingData: () => set({
         userId: null,
@@ -376,6 +446,15 @@ export const useOnboardingStore = create<any>()(
         constraintsData: null,
         generatedTimetable: null,
         timetableError: null,
+        // College fields reset
+        collegeInstitution: null,
+        courseOfferings: [],
+        collegeFaculty: [],
+        collegeRooms: [],
+        collegeSchedule: null,
+        collegeConstraints: null,
+        softConstraintsSchool: [],
+        softConstraintsCollege: [],
       }),
     }),
     {

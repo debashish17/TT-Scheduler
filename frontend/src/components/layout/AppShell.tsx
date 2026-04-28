@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useOnboardingStore } from '../../store';
@@ -20,20 +20,35 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
   const location = useLocation();
   const { user, signOut } = useAuthStore();
   const { institutionData } = useOnboardingStore();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const current = NAV_ITEMS.find(it => location.pathname === it.path || location.pathname.startsWith(it.path + '/'))?.id ?? 'dashboard';
 
+  const handleNav = (path: string) => {
+    navigate(path);
+    setSidebarOpen(false);
+  };
+
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 md:hidden"
+          style={{ background: 'rgba(0,0,0,0.4)' }}
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <aside
-        className="w-[220px] flex flex-col sticky top-0 h-screen shrink-0"
+        className={`fixed md:sticky top-0 h-screen z-50 md:z-auto w-[220px] flex flex-col shrink-0 transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
         style={{ borderRight: '1px solid var(--line)', background: 'var(--paper)' }}
       >
         {/* Logo */}
         <div className="p-5 flex items-center gap-2" style={{ borderBottom: '1px solid var(--line)' }}>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => handleNav('/')}
             className="flex items-center gap-2 hover:opacity-70 transition-opacity"
           >
             <div
@@ -69,7 +84,7 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
             {NAV_ITEMS.map(it => (
               <button
                 key={it.id}
-                onClick={() => navigate(it.path)}
+                onClick={() => handleNav(it.path)}
                 className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] transition-colors"
                 style={{
                   background: current === it.id ? 'var(--ink)' : 'transparent',
@@ -96,7 +111,7 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
         {/* Footer */}
         <div className="p-3" style={{ borderTop: '1px solid var(--line)' }}>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => handleNav('/')}
             className="w-full text-left text-[11px] mono px-2 py-1 transition-colors hover:opacity-70"
             style={{ color: 'var(--ink-3)' }}
           >
@@ -130,7 +145,22 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 min-w-0 overflow-y-auto" style={{ background: 'var(--paper)' }}>
+      <main className="flex-1 min-w-0 overflow-y-auto md:ml-0 ml-0" style={{ background: 'var(--paper)' }}>
+        {/* Mobile header */}
+        <div
+          className="md:hidden flex items-center gap-3 px-4 py-3 sticky top-0 z-30"
+          style={{ borderBottom: '1px solid var(--line)', background: 'var(--paper)' }}
+        >
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="w-8 h-8 flex items-center justify-center rounded-md"
+            style={{ color: 'var(--ink)', background: 'var(--paper-2)' }}
+            aria-label="Open navigation"
+          >
+            <Icon name="menu" size={16} />
+          </button>
+          <span className="font-semibold text-sm tracking-tight">TT-Scheduler</span>
+        </div>
         {children}
       </main>
     </div>

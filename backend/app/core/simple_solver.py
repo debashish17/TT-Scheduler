@@ -30,6 +30,12 @@ import copy
 from typing import Dict, List, Any, Tuple
 from datetime import datetime, timedelta
 
+from app.core.solver_shared import generate_time_slots as _generate_time_slots
+from app.core.solver_shared import build_grid as _build_grid
+from app.core.solver_shared import empty_result as _empty_result
+from app.core.solver_shared import make_warning
+from app.core.solver_shared import apply_soft_constraints_school as _apply_soft_school
+
 logger = logging.getLogger(__name__)
 
 
@@ -494,8 +500,26 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
             if indicators:
                 model.Add(sum(indicators) <= max_pw)
 
+    # ── User-defined soft constraints ──────────────────────
+    soft_constraints = problem.get("soft_constraints", []) or []
+    if soft_constraints:
+        user_penalties = _apply_soft_school(
+            model=model,
+            soft_constraints=soft_constraints,
+            sessions=sessions,
+            day_var=day_var,
+            vp_var=vp_var,
+            t_var=t_var,
+            is_scheduled=is_scheduled,
+            teachers=teachers,
+            subjects=subjects,
+            working_days=working_days,
+            valid_periods=valid_periods,
+        )
+        for var, w in user_penalties:
+            penalty_terms.append(var * w)
+
     # ── Objective ──────────────────────────────────────────
-    # Maximize total scheduled sessions (huge reward), minus penalties
     reward_scheduled = sum(is_scheduled[s] * 10000 for s in range(S))
     if penalty_terms:
         model.Maximize(reward_scheduled - sum(penalty_terms))
@@ -759,58 +783,6 @@ def _greedy_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ──────────────────────────────────────────────────────────────
-# Helpers
+# Helpers — imported from solver_shared.py
+# _generate_time_slots, _build_grid, _empty_result, make_warning
 # ──────────────────────────────────────────────────────────────
-
-def _generate_time_slots(
-    start_time: str, periods_per_day: int, period_duration_minutes: int
-) -> List[Dict[str, Any]]:
-    slots = []
-    h, m = map(int, start_time.split(":"))
-    current = datetime(2000, 1, 1, h, m)
-    for i in range(periods_per_day):
-        end = current + timedelta(minutes=period_duration_minutes)
-        slots.append({
-            "period": i + 1,
-            "start":  current.strftime("%H:%M"),
-            "end":    end.strftime("%H:%M"),
-            "label":  f"Period {i + 1}",
-        })
-        current = end
-    return slots
-
-
-def _build_grid(
-    assignments: List[Dict[str, Any]],
-    classes: List[Dict[str, Any]],
-    working_days: List[str],
-    time_slots: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    grid = {cls["name"]: {day: {} for day in working_days} for cls in classes}
-    for a in assignments:
-        cn, day, p = a["class_name"], a["day"], str(a["period"])
-        if cn in grid and day in grid[cn]:
-            grid[cn][day][p] = a
-    return grid
-
-
-def _empty_result(problem, time_slots, working_days, solver_name):
-    return {
-        "success":      True,
-        "solver":       solver_name,
-        "status":       "FEASIBLE",
-        "solve_time":   0,
-        "assignments":  [],
-        "grid":         {},
-        "time_slots":   time_slots,
-        "working_days": working_days,
-        "warnings":     [],
-        "stats": {
-            "total_assignments":  0,
-            "unplaced_sessions":  0,
-            "classes": 0, "subjects": 0, "teachers": 0, "rooms": 0,
-            "solve_time_seconds": 0,
-            "solver": solver_name,
-            "solver_status": "FEASIBLE",
-        },
-    }

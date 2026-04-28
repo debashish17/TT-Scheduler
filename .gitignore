@@ -82,6 +82,7 @@ frontend/tests/__pycache__/
 
 /docs
 .agents
+.claude
 Smart_Timetable_Review1_Presentation.pptx
 inspect_r1.py
 

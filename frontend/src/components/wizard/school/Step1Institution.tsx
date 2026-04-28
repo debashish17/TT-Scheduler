@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { WizardShell } from './WizardShell';
-import { useWizardStore } from './wizardStore';
+import { WizardShell } from '../WizardShell';
+import { useWizardStore } from '../wizardStore';
 import { useOnboardingStore } from '../../../store';
 
 const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({ label, hint, children }) => (

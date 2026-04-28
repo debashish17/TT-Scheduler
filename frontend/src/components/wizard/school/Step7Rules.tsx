@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { WizardShell } from './WizardShell';
-import { useWizardStore } from './wizardStore';
+import { WizardShell } from '../WizardShell';
+import { useWizardStore } from '../wizardStore';
 import { useOnboardingStore } from '../../../store';
 import { Btn, Eyebrow, Chip, Icon } from '../../ui/primitives';
 import { simpleTimetableAPI, snapshotsAPI } from '../../../api/client';
@@ -22,14 +22,14 @@ interface AiFixState {
 }
 
 const CONSTRAINTS = [
-  { id: 1, name: 'FacultyOverlap',  rule: 'No faculty teaches two classes at the same time' },
-  { id: 2, name: 'RoomOverlap',     rule: 'No room hosts two classes simultaneously' },
-  { id: 3, name: 'BatchOverlap',    rule: 'No batch attends two classes simultaneously' },
-  { id: 4, name: 'RoomCapacity',    rule: 'Room size ≥ batch enrollment' },
-  { id: 5, name: 'CourseHours',     rule: 'Each course gets its required contact hours' },
+  { id: 1, name: 'FacultyOverlap', rule: 'No faculty teaches two classes at the same time' },
+  { id: 2, name: 'RoomOverlap', rule: 'No room hosts two classes simultaneously' },
+  { id: 3, name: 'BatchOverlap', rule: 'No batch attends two classes simultaneously' },
+  { id: 4, name: 'RoomCapacity', rule: 'Room size ≥ batch enrollment' },
+  { id: 5, name: 'CourseHours', rule: 'Each course gets its required contact hours' },
   { id: 6, name: 'FacultyWorkload', rule: 'Faculty hours stay within contract limits' },
-  { id: 7, name: 'RoomFeatures',    rule: 'Rooms match course requirements (lab, projector…)' },
-  { id: 8, name: 'LabConsecutive',  rule: 'Lab sessions are always scheduled back-to-back' },
+  { id: 7, name: 'RoomFeatures', rule: 'Rooms match course requirements (lab, projector…)' },
+  { id: 8, name: 'LabConsecutive', rule: 'Lab sessions are always scheduled back-to-back' },
 ];
 
 // ─── AI: apply ALL fixes at once ─────────────────────────────────
@@ -38,22 +38,22 @@ function computeAllFixes(
   initial: AiFixState,
 ): { teachers: any[]; rooms: any[]; subjects: any[]; timeData: any; log: string[] } {
   let teachers = [...(initial.teachers || [])];
-  let rooms    = [...(initial.rooms    || [])];
+  let rooms = [...(initial.rooms || [])];
   let subjects = [...(initial.subjects || [])];
-  let td       = { ...(initial.timeData || {}) };
+  let td = { ...(initial.timeData || {}) };
   const log: string[] = [];
-  const seen   = new Set<string>();
+  const seen = new Set<string>();
 
   for (const w of warnings) {
     const d = w.detail || {};
 
     if (w.code === 'NO_TEACHER_FOR_SUBJECT') {
       const sc = d.subject as string;
-      const k  = `add_t_${sc}`;
+      const k = `add_t_${sc}`;
       if (!seen.has(k)) {
         seen.add(k);
         let count = 1;
-        while(teachers.some(t => t.name === `${sc} Teacher ${count}`)) count++;
+        while (teachers.some(t => t.name === `${sc} Teacher ${count}`)) count++;
         teachers.push({ name: `${sc} Teacher ${count}`, subjects: [sc] });
         log.push(`✔ Added teacher for "${sc}"`);
       }
@@ -61,8 +61,8 @@ function computeAllFixes(
 
     if (w.code === 'UNKNOWN_SUBJECT_CODE') {
       const tName = d.teacher as string;
-      const bad   = (d.unknown_codes as string[]) || [];
-      const k     = `fix_unknown_${tName}`;
+      const bad = (d.unknown_codes as string[]) || [];
+      const k = `fix_unknown_${tName}`;
       if (!seen.has(k)) {
         seen.add(k);
         teachers = teachers.map((t: any) =>
@@ -85,14 +85,14 @@ function computeAllFixes(
 
     if (w.code === 'TEACHER_CAPACITY_EXCEEDED') {
       const sc = d.subject as string;
-      const k  = `extra_t_${sc}`;
+      const k = `extra_t_${sc}`;
       if (!seen.has(k)) {
         seen.add(k);
         const qualifiedCount = d.qualified_teachers?.length || 1;
         const singleCapacity = Math.floor(d.teacher_capacity / Math.max(1, qualifiedCount)) || 40;
         const shortage = d.sessions_needed - d.teacher_capacity;
         const needed = Math.max(1, Math.ceil(shortage / singleCapacity));
-        
+
         let count = 1;
         for (let i = 0; i < needed; i++) {
           while (teachers.some((t: any) => t.name === `${sc} Teacher ${count}`)) count++;
@@ -103,9 +103,9 @@ function computeAllFixes(
     }
 
     if (w.code === 'NO_ROOM_FOR_CLASS') {
-      const cn   = d.class as string;
+      const cn = d.class as string;
       const size = (d.class_size as number) || 30;
-      const k    = `room_${cn}`;
+      const k = `room_${cn}`;
       if (!seen.has(k)) {
         seen.add(k);
         rooms.push({ name: `Large Room ${rooms.length + 1}`, capacity: size });
@@ -125,7 +125,7 @@ function computeAllFixes(
     }
 
     if (w.code === 'UNPLACED_SESSION') {
-      const sc  = d.subject as string;
+      const sc = d.subject as string;
       const fix = ((d.fix as string) || '').toLowerCase();
       if (fix.includes('teacher') && !seen.has(`up_t_${sc}`)) {
         seen.add(`up_t_${sc}`);
@@ -151,40 +151,78 @@ function computeAllFixes(
 }
 
 // ─── Solving overlay ──────────────────────────────────────────────────────────
+const SOLVER_STEPS = [
+  'Validating problem',
+  'Building model',
+  'Running diagnostics',
+  'Building CP-SAT model',
+  'Searching',
+  'Extracting solution',
+  'Building assignments',
+  'Done',
+];
+
 const SolvingOverlay: React.FC<{ progress: number }> = ({ progress }) => {
-  const lines = [
-    '$ cp-sat solve --workers=8',
-    'loading model ··········································· ok',
-    'variables: 1,428',
-    'constraints: 8,214',
-    'search space: 2.4e47',
-    'propagating hard constraints ··························· ok',
-    'branch & bound: depth 12',
-    'incumbent @ 1.2s  soft_score=124',
-    'incumbent @ 2.1s  soft_score=142',
-    'incumbent @ 3.0s  soft_score=148',
-    'optimality gap closed · 3.4s',
-    '✓ solution found — 0 clashes · 8/8 constraints satisfied',
-  ];
-  const shown = Math.floor(progress * lines.length);
+  const currentIdx = Math.min(Math.floor(progress * SOLVER_STEPS.length), SOLVER_STEPS.length - 1);
 
   return (
     <div className="fixed inset-0 z-50 paper-grain flex items-center justify-center" style={{ background: 'var(--paper)' }}>
-      <div className="max-w-2xl w-full px-8">
+      <div className="max-w-lg w-full px-8">
         <Eyebrow>Solving · run-{Date.now().toString().slice(-4)}</Eyebrow>
-        <h2 className="serif leading-tight tracking-tight mt-4 mb-8" style={{ fontSize: 52 }}>
+        <h2 className="serif leading-tight tracking-tight mt-4 mb-8" style={{ fontSize: 48 }}>
           Searching for<br />a <span className="italic" style={{ color: 'var(--brand)' }}>clash-free</span> schedule.
         </h2>
-        <div className="edge rounded-xl p-5 mono text-[12px] min-h-[200px]" style={{ background: 'var(--paper-2)', color: 'var(--ink-2)' }}>
-          {lines.slice(0, shown).map((l, i) => <div key={i} className="py-[3px]">{l}</div>)}
-          {shown < lines.length && <div className="py-[3px]" style={{ color: 'var(--brand)' }}>▍</div>}
+        <div className="edge rounded-xl overflow-hidden" style={{ background: 'var(--paper-2)' }}>
+          {SOLVER_STEPS.map((step, i) => {
+            const done = i < currentIdx;
+            const active = i === currentIdx && progress < 1;
+            const pending = i > currentIdx;
+            return (
+              <div
+                key={step}
+                className="flex items-center gap-3 px-4 py-3"
+                style={{ borderTop: i > 0 ? '1px solid var(--line)' : undefined }}
+              >
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px]"
+                  style={{
+                    background: done ? 'var(--brand)' : active ? 'var(--brand-soft)' : 'var(--paper)',
+                    border: pending ? '1px solid var(--line)' : undefined,
+                  }}
+                >
+                  {done ? (
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                      <path d="M2 5l2.5 2.5L8 3" stroke="var(--paper)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : active ? (
+                    <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--brand)' }} />
+                  ) : null}
+                </div>
+                <span
+                  className="text-[13px]"
+                  style={{
+                    color: done ? 'var(--ink)' : active ? 'var(--ink)' : 'var(--ink-3)',
+                    fontWeight: active ? 600 : 400,
+                  }}
+                >
+                  {step}
+                </span>
+                {active && (
+                  <span className="ml-auto mono text-[11px]" style={{ color: 'var(--brand)' }}>running…</span>
+                )}
+                {done && (
+                  <span className="ml-auto mono text-[11px]" style={{ color: 'var(--ink-3)' }}>done</span>
+                )}
+              </div>
+            );
+          })}
         </div>
         <div className="mt-5 flex items-center gap-4">
           <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--line)' }}>
             <div className="h-full rounded-full" style={{ width: `${progress * 100}%`, background: 'var(--brand)', transition: 'width .3s' }} />
           </div>
           <span className="mono text-[11px]" style={{ color: 'var(--ink-3)' }}>
-            {(Math.round(progress * 34) / 10).toFixed(1)}s / 3.4s
+            {Math.round(progress * 100)}%
           </span>
         </div>
       </div>
@@ -201,6 +239,7 @@ const Step7Rules: React.FC = () => {
     setGeneratedTimetable, setTimetableError, generatedTimetable,
     setTeachersData, setRoomsData, setSubjectsData, setTimeData,
     setConstraintsData,
+    softConstraintsSchool, setSoftConstraintsSchool,
   } = useOnboardingStore();
   const isSchool = workflow === 'school';
   const shown = isSchool ? CONSTRAINTS.slice(0, 4) : CONSTRAINTS;
@@ -231,10 +270,26 @@ const Step7Rules: React.FC = () => {
   const [aiSolveLog, setAiSolveLog] = useState<string[]>([]);
   const [isAiSolving, setIsAiSolving] = useState(false);
 
+  // Soft constraints state
+  type SoftConstraint = { type: string; target: string; when: string | null; weight: number };
+  const RULE_TYPES = [
+    { value: 'avoid_day',      label: 'Avoid day' },
+    { value: 'avoid_slot',     label: 'Avoid period' },
+    { value: 'prefer_slot',    label: 'Prefer period' },
+    { value: 'spread_subject', label: 'Spread subject' },
+    { value: 'group_on_day',   label: 'Group on day' },
+  ];
+  const [showAddPref, setShowAddPref] = useState(false);
+  const [prefType, setPrefType]       = useState('avoid_day');
+  const [prefTarget, setPrefTarget]   = useState('');
+  const [prefWhen, setPrefWhen]       = useState('');
+  const [prefWeight, setPrefWeight]   = useState(3);
+  const [softPrefs, setSoftPrefs]     = useState<SoftConstraint[]>(softConstraintsSchool ?? []);
+
   // Rename-after-auto-resolve state
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [newTeacherNames, setNewTeacherNames] = useState<{ original: string; current: string }[]>([]);
-  const [newRoomNames,    setNewRoomNames]    = useState<{ original: string; current: string }[]>([]);
+  const [newRoomNames, setNewRoomNames] = useState<{ original: string; current: string }[]>([]);
   // Ref so runGenerate's closure can read the latest value without stale-capture
   const pendingRenameRef = useRef<{ teachers: { original: string; current: string }[]; rooms: { original: string; current: string }[] } | null>(null);
 
@@ -256,9 +311,9 @@ const Step7Rules: React.FC = () => {
   // Build request — accepts optional overrides so callers can pass freshly-fixed
   // data without waiting for Zustand state to propagate
   const buildRequest = (overrides: { teachers?: any[]; rooms?: any[]; subjects?: any[] } = {}) => {
-    const rawSubjects  = overrides.subjects  ?? subjectsData  ?? [];
-    const rawTeachers  = overrides.teachers  ?? teachersData  ?? [];
-    const rawRooms     = overrides.rooms     ?? roomsData     ?? [];
+    const rawSubjects = overrides.subjects ?? subjectsData ?? [];
+    const rawTeachers = overrides.teachers ?? teachersData ?? [];
+    const rawRooms = overrides.rooms ?? roomsData ?? [];
 
     const subj = rawSubjects
       .filter((s: any) => s?.name?.trim() && s?.code?.trim())
@@ -315,6 +370,12 @@ const Step7Rules: React.FC = () => {
           parseInt(constraints.max_periods_per_day_per_teacher) || 6,
         ),
       },
+      soft_constraints: (softConstraintsSchool ?? []).map((sc: SoftConstraint) => ({
+        type: sc.type,
+        target: sc.target,
+        ...(sc.when != null ? { when: sc.when } : {}),
+        weight: sc.weight,
+      })),
     };
   };
 
@@ -472,13 +533,13 @@ const Step7Rules: React.FC = () => {
 
       // Detect newly-added teachers / rooms so we can offer renaming later
       const origTeacherNames = new Set((teachersData || []).map((t: any) => t.name));
-      const origRoomNames    = new Set((roomsData    || []).map((r: any) => r.name));
+      const origRoomNames = new Set((roomsData || []).map((r: any) => r.name));
       const newTeachers = result.teachers
         .filter((t: any) => !origTeacherNames.has(t.name))
-        .map   ((t: any) => ({ original: t.name, current: t.name }));
+        .map((t: any) => ({ original: t.name, current: t.name }));
       const newRooms = result.rooms
         .filter((r: any) => !origRoomNames.has(r.name))
-        .map   ((r: any) => ({ original: r.name, current: r.name }));
+        .map((r: any) => ({ original: r.name, current: r.name }));
 
       // Stash in ref so runGenerate's closure can read it after async completes
       if (newTeachers.length > 0 || newRooms.length > 0) {
@@ -494,7 +555,7 @@ const Step7Rules: React.FC = () => {
       setShowResolveModal(false);
       await runGenerate({
         teachers: result.teachers,
-        rooms:    result.rooms,
+        rooms: result.rooms,
         subjects: result.subjects,
       });
     } finally {
@@ -506,25 +567,25 @@ const Step7Rules: React.FC = () => {
     console.log('Validating classes:', classesData);
     const validClasses = (classesData || []).filter((c: any) => c?.name?.trim());
     console.log('Valid classes:', validClasses);
-    
+
     if (!validClasses.length) {
       setError('Please complete: Classes/Batches');
       return;
     }
-    
+
     console.log('Validating subjects:', subjectsData);
     const validSubjects = (subjectsData || []).filter((s: any) => s?.name?.trim() && s?.code?.trim());
     console.log('Valid subjects:', validSubjects);
-    
+
     if (!validSubjects.length) {
       setError('Please complete: Subjects');
       return;
     }
-    
+
     console.log('Validating rooms:', roomsData);
     const validRooms = (roomsData || []).filter((r: any) => r?.name?.trim());
     console.log('Valid rooms:', validRooms);
-    
+
     if (!validRooms.length) {
       setError('Please complete: Rooms');
       return;
@@ -579,10 +640,14 @@ const Step7Rules: React.FC = () => {
           {/* Configurable limits */}
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: 'Max consecutive periods / teacher', value: maxConsec, min: 1, max: 8,
-                onChange: (v: number) => { setMaxConsec(v); saveConstraints({ max_consecutive_periods: v }); } },
-              { label: 'Max periods / teacher / day', value: maxPerDay, min: 1, max: 12,
-                onChange: (v: number) => { setMaxPerDay(v); saveConstraints({ max_periods_per_day_per_teacher: v }); } },
+              {
+                label: 'Max consecutive periods / teacher', value: maxConsec, min: 1, max: 8,
+                onChange: (v: number) => { setMaxConsec(v); saveConstraints({ max_consecutive_periods: v }); }
+              },
+              {
+                label: 'Max periods / teacher / day', value: maxPerDay, min: 1, max: 12,
+                onChange: (v: number) => { setMaxPerDay(v); saveConstraints({ max_periods_per_day_per_teacher: v }); }
+              },
             ].map(({ label, value, min, max, onChange }) => (
               <div key={label} className="edge rounded-lg p-3" style={{ background: 'var(--paper)' }}>
                 <div className="text-[11px] mono mb-2" style={{ color: 'var(--ink-3)' }}>{label}</div>
@@ -602,18 +667,25 @@ const Step7Rules: React.FC = () => {
           <div className="pt-4" style={{ borderTop: '1px solid var(--line)' }}>
             <h3 className="font-semibold mb-3">Soft preferences</h3>
             <div className="space-y-2">
-              {[
-                { name: isSchool ? 'Avoid first period for Mrs. Sharma (Mon)' : 'Avoid first-period classes for Dr. Shah', score: '-3' },
-                { name: isSchool ? 'Spread Maths across the week' : 'Group labs on Wednesday afternoon', score: '+2' },
-                { name: isSchool ? 'Keep Computer Lab free on Fridays' : 'Spread core subjects evenly across week', score: '+5' },
-              ].map(p => (
-                <div key={p.name} className="flex items-center gap-3 edge rounded-lg px-3 py-2.5" style={{ background: 'var(--paper)' }}>
-                  <span className="text-sm flex-1">{p.name}</span>
-                  <Chip tone={p.score.startsWith('+') ? 'ok' : 'warn'}>weight {p.score}</Chip>
-                  <button style={{ color: 'var(--ink-3)' }}><Icon name="x" size={13} /></button>
+              {softPrefs.map((p, i) => (
+                <div key={i} className="flex items-center gap-3 edge rounded-lg px-3 py-2.5" style={{ background: 'var(--paper)' }}>
+                  <span className="text-sm flex-1">
+                    <span className="mono text-[11px] mr-2" style={{ color: 'var(--ink-3)' }}>{p.type.replace(/_/g, ' ')}</span>
+                    {p.target}{p.when ? ` — ${p.when}` : ''}
+                  </span>
+                  <Chip tone="ok">weight +{p.weight}</Chip>
+                  <button onClick={() => {
+                    const next = softPrefs.filter((_, j) => j !== i);
+                    setSoftPrefs(next);
+                    setSoftConstraintsSchool(next);
+                  }} style={{ color: 'var(--ink-3)' }}><Icon name="x" size={13} /></button>
                 </div>
               ))}
-              <button className="flex items-center gap-2 text-sm" style={{ color: 'var(--ink-3)' }}>
+              {softPrefs.length === 0 && (
+                <p className="text-sm" style={{ color: 'var(--ink-3)' }}>No preferences added yet.</p>
+              )}
+              <button className="flex items-center gap-2 text-sm" style={{ color: 'var(--ink-3)' }}
+                onClick={() => setShowAddPref(true)}>
                 <Icon name="plus" size={13} /> Add preference
               </button>
             </div>
@@ -870,7 +942,7 @@ const Step7Rules: React.FC = () => {
                     const patchedAssignments = ((generatedTimetable as any).assignments || []).map((a: any) => ({
                       ...a,
                       teacher_name: teacherMap[a.teacher_name] ?? a.teacher_name,
-                      room_name:    roomMap[a.room_name]       ?? a.room_name,
+                      room_name: roomMap[a.room_name] ?? a.room_name,
                     }));
                     setGeneratedTimetable({ ...(generatedTimetable as any), assignments: patchedAssignments });
                   }
@@ -881,6 +953,97 @@ const Step7Rules: React.FC = () => {
               >
                 <Icon name="check" size={13} /> Done &amp; View Timetable
               </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Soft Preference Modal */}
+      {showAddPref && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.35)' }}
+            onClick={() => setShowAddPref(false)} />
+          <div className="relative w-full max-w-sm rounded-2xl edge overflow-hidden"
+            style={{ background: 'var(--paper)' }}>
+            <div className="px-6 pt-5 pb-4" style={{ borderBottom: '1px solid var(--line)' }}>
+              <h2 className="font-semibold text-[15px]">Add soft preference</h2>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <span className="text-[12px] font-medium block mb-1" style={{ color: 'var(--ink-2)' }}>Rule type</span>
+                <select value={prefType} onChange={e => setPrefType(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md text-sm outline-none"
+                  style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}>
+                  {RULE_TYPES.map(rt => <option key={rt.value} value={rt.value}>{rt.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <span className="text-[12px] font-medium block mb-1" style={{ color: 'var(--ink-2)' }}>
+                  {prefType === 'spread_subject' || prefType === 'group_on_day' ? 'Subject code' : 'Teacher name'}
+                </span>
+                <input value={prefTarget} onChange={e => setPrefTarget(e.target.value)}
+                  placeholder={prefType === 'spread_subject' || prefType === 'group_on_day' ? 'e.g. MATH' : 'e.g. Mrs. Sharma'}
+                  className="w-full px-3 py-2 rounded-md text-sm outline-none"
+                  style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }} />
+              </div>
+              {prefType === 'avoid_day' && (
+                <div>
+                  <span className="text-[12px] font-medium block mb-1" style={{ color: 'var(--ink-2)' }}>Day</span>
+                  <select value={prefWhen} onChange={e => setPrefWhen(e.target.value)}
+                    className="w-full px-3 py-2 rounded-md text-sm outline-none"
+                    style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}>
+                    <option value="">-- select day --</option>
+                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(d =>
+                      <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+              )}
+              {(prefType === 'avoid_slot' || prefType === 'prefer_slot') && (
+                <div>
+                  <span className="text-[12px] font-medium block mb-1" style={{ color: 'var(--ink-2)' }}>Period number</span>
+                  <input type="number" min={1} max={15} value={prefWhen}
+                    onChange={e => setPrefWhen(e.target.value)}
+                    className="w-full px-3 py-2 rounded-md text-sm outline-none"
+                    style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }} />
+                </div>
+              )}
+              <div>
+                <span className="text-[12px] font-medium block mb-1" style={{ color: 'var(--ink-2)' }}>
+                  Weight (1 = soft hint, 10 = strong preference)
+                </span>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setPrefWeight(w => Math.max(1, w - 1))}
+                    className="w-7 h-7 rounded flex items-center justify-center text-sm"
+                    style={{ background: 'var(--paper-2)', color: 'var(--ink)' }}>−</button>
+                  <span className="mono font-semibold text-sm w-6 text-center">{prefWeight}</span>
+                  <button onClick={() => setPrefWeight(w => Math.min(10, w + 1))}
+                    className="w-7 h-7 rounded flex items-center justify-center text-sm"
+                    style={{ background: 'var(--paper-2)', color: 'var(--ink)' }}>+</button>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 flex gap-3" style={{ borderTop: '1px solid var(--line)' }}>
+              <button className="flex-1 px-4 py-2 rounded-lg text-sm"
+                style={{ background: 'var(--paper-2)', color: 'var(--ink)' }}
+                onClick={() => setShowAddPref(false)}>Cancel</button>
+              <button className="flex-1 px-4 py-2 rounded-lg text-sm font-medium"
+                style={{ background: 'var(--ink)', color: 'var(--paper)' }}
+                onClick={() => {
+                  if (!prefTarget.trim()) return;
+                  const sc: SoftConstraint = {
+                    type: prefType,
+                    target: prefTarget.trim(),
+                    when: prefWhen.trim() || null,
+                    weight: prefWeight,
+                  };
+                  const next = [...softPrefs, sc];
+                  setSoftPrefs(next);
+                  setSoftConstraintsSchool(next);
+                  setPrefTarget('');
+                  setPrefWhen('');
+                  setPrefWeight(3);
+                  setShowAddPref(false);
+                }}>Add</button>
             </div>
           </div>
         </div>
