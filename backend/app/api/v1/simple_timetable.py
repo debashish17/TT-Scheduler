@@ -9,6 +9,7 @@ from typing import Dict, List, Any, Optional
 import logging
 
 from app.core.simple_solver import solve_timetable
+from app.core.college_solver import solve_college_timetable
 from app.models import User
 from app.api.deps import get_current_user
 
@@ -44,6 +45,13 @@ class ConstraintsIn(BaseModel):
     max_periods_per_day_per_teacher: int = Field(default=8, ge=1, le=15)
 
 
+class SoftConstraintIn(BaseModel):
+    type: str                       # avoid_slot | avoid_day | prefer_slot | spread_subject | group_on_day
+    target: str                     # teacher name (school) or faculty code (college) or subject/course code
+    when: Optional[str] = None      # day name or period number string (1-based)
+    weight: int = Field(default=3, ge=1, le=10)
+
+
 class SimpleTimetableRequest(BaseModel):
     institution_name: str = "My School"
     subjects: List[SubjectIn]
@@ -55,6 +63,7 @@ class SimpleTimetableRequest(BaseModel):
     period_duration_minutes: int = Field(default=45, ge=15, le=180)
     start_time: str = "08:00"
     constraints: ConstraintsIn = Field(default_factory=ConstraintsIn)
+    soft_constraints: List[SoftConstraintIn] = []
 
 
 @router.post("/generate-simple")
@@ -98,7 +107,8 @@ async def generate_simple_timetable(
         "periods_per_day": request.periods_per_day,
         "period_duration_minutes": request.period_duration_minutes,
         "start_time": request.start_time,
-        "constraints": request.constraints.model_dump()
+        "constraints": request.constraints.model_dump(),
+        "soft_constraints": [sc.model_dump() for sc in request.soft_constraints],
     }
 
     logger.info(
@@ -111,6 +121,115 @@ async def generate_simple_timetable(
         result = solve_timetable(problem)
     except Exception as e:
         logger.error(f"Timetable generation error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Solver error: {str(e)}")
+
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Timetable generation failed"))
+
+    return result
+
+
+# ─────────────────────────────────────────────────────────────
+# COLLEGE TIMETABLE GENERATION
+# ─────────────────────────────────────────────────────────────
+
+class CollegeCourseIn(BaseModel):
+    code: str
+    name: str
+    department: str
+    year: int = 1
+    credits: int = Field(default=3, ge=2, le=4)
+    lectures_per_week: int = Field(default=3, ge=1)
+    has_lab: bool = False
+    required_lecture_room_type: str = "classroom"
+    required_lab_room_type: Optional[str] = None
+    enrolled_students: int = Field(default=30, ge=1)
+    is_elective: bool = False
+    faculty_codes: List[str] = []
+
+
+class CollegeFacultyIn(BaseModel):
+    code: str
+    name: str
+    department: str = ""
+    courses_can_teach: List[str] = []
+    max_hours_per_week: int = Field(default=18, ge=1, le=40)
+
+
+class CollegeRoomIn(BaseModel):
+    name: str
+    capacity: int = Field(default=40, ge=1)
+    room_type: str = "classroom"
+
+
+class CollegeDepartmentIn(BaseModel):
+    code: str
+    name: str
+
+
+class CollegeConstraintsIn(BaseModel):
+    lunch_period_index: int = Field(default=-1)
+    max_consecutive_periods: int = Field(default=3, ge=1, le=10)
+    max_periods_per_day_per_faculty: int = Field(default=6, ge=1, le=15)
+
+
+class CollegeTimetableRequest(BaseModel):
+    mode: str = "college"
+    institution_name: str = "My College"
+    semester: int = Field(default=1, ge=1, le=8)
+    departments: List[CollegeDepartmentIn] = []
+    course_offerings: List[CollegeCourseIn]
+    faculty: List[CollegeFacultyIn]
+    rooms: List[CollegeRoomIn]
+    working_days: List[str] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    periods_per_day: int = Field(default=7, ge=1, le=15)
+    period_duration_minutes: int = Field(default=60, ge=15, le=180)
+    start_time: str = "08:00"
+    constraints: CollegeConstraintsIn = Field(default_factory=CollegeConstraintsIn)
+    soft_constraints: List[SoftConstraintIn] = []
+
+
+@router.post("/generate-college")
+async def generate_college_timetable(
+    request: CollegeTimetableRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate a college timetable using the CP-SAT solver.
+    Supports enrollment-driven sections, credit-hour mapping, and lab continuity.
+    """
+    if not request.course_offerings:
+        raise HTTPException(status_code=400, detail="At least one course offering is required")
+    if not request.faculty:
+        raise HTTPException(status_code=400, detail="At least one faculty member is required")
+    if not request.rooms:
+        raise HTTPException(status_code=400, detail="At least one room is required")
+
+    problem = {
+        "institution_name": request.institution_name,
+        "semester": request.semester,
+        "departments": [d.model_dump() for d in request.departments],
+        "course_offerings": [c.model_dump() for c in request.course_offerings],
+        "faculty": [f.model_dump() for f in request.faculty],
+        "rooms": [r.model_dump() for r in request.rooms],
+        "working_days": request.working_days,
+        "periods_per_day": request.periods_per_day,
+        "period_duration_minutes": request.period_duration_minutes,
+        "start_time": request.start_time,
+        "constraints": request.constraints.model_dump(),
+        "soft_constraints": [sc.model_dump() for sc in request.soft_constraints],
+    }
+
+    logger.info(
+        f"Generating college timetable for '{request.institution_name}': "
+        f"{len(request.course_offerings)} courses, {len(request.faculty)} faculty, "
+        f"{len(request.rooms)} rooms"
+    )
+
+    try:
+        result = solve_college_timetable(problem)
+    except Exception as e:
+        logger.error(f"College timetable generation error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Solver error: {str(e)}")
 
     if not result.get("success"):

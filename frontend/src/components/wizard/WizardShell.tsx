@@ -5,7 +5,7 @@
  */
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Btn, Eyebrow, Icon, TopBar } from '../../ui/primitives';
+import { Btn, Eyebrow, Icon, TopBar } from '../ui/primitives';
 import { useWizardStore } from './wizardStore';
 
 const STEPS = [
@@ -18,7 +18,7 @@ const STEPS = [
   { label: 'Rules',       path: '/wizard/step/7' },
 ];
 
-const COLLEGE_LABELS = ['Institution', 'Batches', 'Courses', 'Faculty', 'Schedule', 'Rooms', 'Rules'];
+const COLLEGE_LABELS = ['Institution', 'Courses', 'Faculty', 'Schedule', 'Rooms', 'Constraints', 'Generate'];
 
 const DAYS  = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const SLOTS = [1, 2, 3, 4, 5, 6, 7];
@@ -35,9 +35,10 @@ const GRID: Record<string, Record<number, string | null>> = {
   Fri: { 1:'CS304', 2:'CS301', 3:'HS301', 4:'CS302', 5:'CS392', 6:'CS392', 7:'MA301' },
 };
 
-export const DraftPanel: React.FC<{ currentStep: number }> = ({ currentStep }) => {
+export const DraftPanel: React.FC<{ currentStep: number; workflow?: string }> = ({ currentStep, workflow }) => {
   const step0 = currentStep - 1; // 0-indexed for progress
   const pct = step0 / 6;
+  const sidebarLabels = workflow === 'college' ? COLLEGE_LABELS : STEPS.map(s => s.label);
   return (
     <div className="sticky top-20 space-y-3">
       <div className="edge rounded-xl p-4" style={{ background: 'var(--paper)' }}>
@@ -89,8 +90,8 @@ export const DraftPanel: React.FC<{ currentStep: number }> = ({ currentStep }) =
       <div className="edge rounded-xl p-4" style={{ background: 'var(--paper)' }}>
         <Eyebrow className="block mb-3">Setup progress</Eyebrow>
         <div className="space-y-2">
-          {STEPS.map((step, i) => (
-            <div key={step.label} className="flex items-center gap-2">
+          {sidebarLabels.map((label, i) => (
+            <div key={label} className="flex items-center gap-2">
               <div
                 className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 text-[9px]"
                 style={{
@@ -101,7 +102,7 @@ export const DraftPanel: React.FC<{ currentStep: number }> = ({ currentStep }) =
                 {i < step0 ? '✓' : i + 1}
               </div>
               <span className="text-[12px]" style={{ color: i === step0 ? 'var(--ink)' : i < step0 ? 'var(--ink-2)' : 'var(--ink-3)', fontWeight: i === step0 ? 600 : 400 }}>
-                {step.label}
+                {label}
               </span>
               {i === step0 && <span className="ml-auto mono text-[10px]" style={{ color: 'var(--brand)' }}>active</span>}
             </div>
@@ -201,7 +202,7 @@ export const WizardShell: React.FC<WizardShellProps> = ({ step, title, children 
             </div>
           </div>
           <div className="col-span-12 lg:col-span-4">
-            <DraftPanel currentStep={step} />
+            <DraftPanel currentStep={step} workflow={workflow ?? undefined} />
           </div>
         </div>
       </div>

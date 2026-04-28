@@ -1,8 +1,8 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eyebrow, Icon, TopBar } from '../../ui/primitives';
+import { Eyebrow, Icon, TopBar } from '../ui/primitives';
 import { useWizardStore } from './wizardStore';
-import { useOnboardingStore } from '../../../store';
+import { useOnboardingStore } from '../../store';
 
 const WorkflowSelector: React.FC = () => {
   const navigate = useNavigate();
