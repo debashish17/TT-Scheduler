@@ -88,3 +88,7 @@ inspect_r1.py
 
 # Private deployment notes (contain real URLs / service names)
 DEPLOYMENT.md
+
+# External / unrelated PDF documents
+VIT AP Neo Browser User Manual (Lab Systems - Ubuntu).pdf
+*.pdf
