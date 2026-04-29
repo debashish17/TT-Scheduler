@@ -27,10 +27,12 @@ interface SnapshotSummary {
       clashes?: number;
       solve_time_seconds?: number;
     };
+    assignments?: any[];
+    working_days?: string[];
+    time_slots?: any[];
+    solver?: string;
+    status?: string;
   };
-  classes_data?: any[];
-  teachers_data?: any[];
-  rooms_data?: any[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -182,8 +184,8 @@ const DashboardPage: React.FC = () => {
   const latestSolve = formatSolveTime(latestSolveRaw);
   const latestWhen = latest ? relativeTime(latest.created_at) : null;
 
-  const activeStudentsCount = latest?.classes_data 
-    ? latest.classes_data.reduce((sum, c) => sum + (Number(c.size) || 0), 0)
+  const activeStudentsCount = latest?.classes_data
+    ? latest.classes_data.reduce((sum, c) => sum + (Number(c.size ?? c.enrolled_students) || 0), 0)
     : 0;
   const activeStudentsStr = activeStudentsCount > 0 ? activeStudentsCount.toLocaleString() : '—';
   
