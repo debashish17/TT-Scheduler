@@ -77,10 +77,8 @@ backend/alembic/versions/*.pyc
 backend/tests/__pycache__/
 frontend/tests/__pycache__/
 
-# Ignore docs build artifacts
+# Ignore docs build artifacts only — docs/screenshots is tracked
 /docs/build/
-
-/docs
 .agents
 .claude
 Smart_Timetable_Review1_Presentation.pptx

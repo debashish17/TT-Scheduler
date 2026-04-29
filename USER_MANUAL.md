@@ -1,4 +1,4 @@
-# TT-Scheduler — User Manual
+﻿# TT-Scheduler — User Manual
 
 > **Version:** 1.0 &nbsp;|&nbsp; **Last Updated:** April 2026  
 > **Live App:** [tt-scheduler.vercel.app](https://tt-scheduler.vercel.app)
