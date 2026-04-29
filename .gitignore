@@ -77,13 +77,18 @@ backend/alembic/versions/*.pyc
 backend/tests/__pycache__/
 frontend/tests/__pycache__/
 
-# Ignore docs build artifacts
+# Ignore docs build artifacts only — docs/screenshots is tracked
 /docs/build/
-
-/docs
 .agents
+.claude
 Smart_Timetable_Review1_Presentation.pptx
 inspect_r1.py
 
 # Private deployment notes (contain real URLs / service names)
 DEPLOYMENT.md
+
+# External / unrelated PDF documents
+VIT AP Neo Browser User Manual (Lab Systems - Ubuntu).pdf
+*.pdf
+
+generate_pdf.py

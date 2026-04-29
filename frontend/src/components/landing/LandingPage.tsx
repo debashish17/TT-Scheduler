@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Btn, Eyebrow, Chip, Dot, Icon } from '../ui/primitives';
 
+const DEMO_URL = 'https://youtu.be/FnEJKE4fZ2M';
+
 // ─── Mock data for demo grid ──────────────────────────────────────────────────
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const PERIODS = [
@@ -156,8 +158,8 @@ const Hero: React.FC<{ workflow: string; onEnter: () => void }> = ({ workflow, o
             <Btn variant="primary" size="lg" onClick={onEnter}>
               {isSchool ? 'Schedule my school' : 'Schedule my college'} <Icon name="arrow" size={14} />
             </Btn>
-            <Btn variant="ghost" size="lg">
-              <Icon name="play" size={14} /> 40-sec walkthrough
+            <Btn variant="ghost" size="lg" onClick={() => window.open(DEMO_URL, '_blank', 'noopener,noreferrer')}>
+              <Icon name="play" size={14} /> Demo
             </Btn>
           </div>
           <div className="mt-6 flex items-center gap-5 text-[12px] mono" style={{ color: 'var(--ink-3)' }}>
