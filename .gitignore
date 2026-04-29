@@ -90,3 +90,5 @@ DEPLOYMENT.md
 # External / unrelated PDF documents
 VIT AP Neo Browser User Manual (Lab Systems - Ubuntu).pdf
 *.pdf
+
+generate_pdf.py

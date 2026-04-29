@@ -1,6 +1,6 @@
-﻿# TT-Scheduler — User Manual
+# TT-Scheduler — User Manual
 
-> **Version:** 1.0 &nbsp;|&nbsp; **Last Updated:** April 2026  
+> **Version:** 1.0 &nbsp;|&nbsp; **Last Updated:** April 2026
 > **Live App:** [tt-scheduler.vercel.app](https://tt-scheduler.vercel.app)
 
 ---
@@ -9,31 +9,31 @@
 
 1. [Introduction](#1-introduction)
 2. [Getting Started](#2-getting-started)
-   - 2.1 [Creating an Account](#21-creating-an-account)
-   - 2.2 [Logging In](#22-logging-in)
-   - 2.3 [Dashboard Overview](#23-dashboard-overview)
+ - 2.1 [Creating an Account](#21-creating-an-account)
+ - 2.2 [Logging In](#22-logging-in)
+ - 2.3 [Dashboard Overview](#23-dashboard-overview)
 3. [Choosing Your Workflow](#3-choosing-your-workflow)
 4. [School Workflow — Step-by-Step](#4-school-workflow--step-by-step)
-   - Step 1: [Institution Setup](#step-1-institution-setup)
-   - Step 2: [Classes / Batches](#step-2-classes--batches)
-   - Step 3: [Subjects](#step-3-subjects)
-   - Step 4: [Teachers](#step-4-teachers)
-   - Step 5: [Schedule](#step-5-schedule)
-   - Step 6: [Rooms](#step-6-rooms)
-   - Step 7: [Rules & Generate](#step-7-rules--generate)
+ - Step 1: [Institution Setup](#step-1-institution-setup)
+ - Step 2: [Classes / Batches](#step-2-classes--batches)
+ - Step 3: [Subjects](#step-3-subjects)
+ - Step 4: [Teachers](#step-4-teachers)
+ - Step 5: [Schedule](#step-5-schedule)
+ - Step 6: [Rooms](#step-6-rooms)
+ - Step 7: [Rules & Generate](#step-7-rules--generate)
 5. [College Workflow — Step-by-Step](#5-college-workflow--step-by-step)
-   - Step 1: [Institution Setup](#college-step-1-institution-setup)
-   - Step 2: [Course Offerings](#college-step-2-course-offerings)
-   - Step 3: [Faculty](#college-step-3-faculty)
-   - Step 4: [Rooms](#college-step-4-rooms)
-   - Step 5: [Schedule](#college-step-5-schedule)
-   - Step 6: [Constraints](#college-step-6-constraints)
-   - Step 7: [Generate](#college-step-7-generate)
+ - Step 1: [Institution Setup](#college-step-1-institution-setup)
+ - Step 2: [Course Offerings](#college-step-2-course-offerings)
+ - Step 3: [Faculty](#college-step-3-faculty)
+ - Step 4: [Rooms](#college-step-4-rooms)
+ - Step 5: [Schedule](#college-step-5-schedule)
+ - Step 6: [Constraints](#college-step-6-constraints)
+ - Step 7: [Generate](#college-step-7-generate)
 6. [Viewing Your Timetable](#6-viewing-your-timetable)
-   - 6.1 [Class / Grid View](#61-class--grid-view)
-   - 6.2 [Faculty View](#62-faculty-view)
-   - 6.3 [Student View](#63-student-view)
-   - 6.4 [Analytics View](#64-analytics-view)
+ - 6.1 [Class / Grid View](#61-class--grid-view)
+ - 6.2 [Faculty View](#62-faculty-view)
+ - 6.3 [Student View](#63-student-view)
+ - 6.4 [Analytics View](#64-analytics-view)
 7. [Exporting Your Timetable](#7-exporting-your-timetable)
 8. [Timetable History](#8-timetable-history)
 9. [Auto-Resolve (AI Fix)](#9-auto-resolve-ai-fix)
@@ -52,13 +52,13 @@
 
 | Feature | Description |
 |---|---|
-| 🧠 **CP-SAT Solver** | 8 hard constraints enforced — zero clash, guaranteed |
-| 🧭 **7-Step Wizard** | Guided onboarding for both School and College modes |
-| 👤 **Per-User Data** | Your inputs and results are saved; pick up where you left off |
-| 📜 **History** | Browse, compare, and restore any past timetable |
-| 📊 **4 Views** | Grid, Faculty, Student, and Analytics views |
-| 📥 **Excel Import/Export** | Bulk-load faculty & courses from `.xlsx`; export full timetable |
-| 🔐 **Secure Auth** | JWT-based login with row-level database security |
+| **CP-SAT Solver** | 8 hard constraints enforced — zero clash, guaranteed |
+| **7-Step Wizard** | Guided onboarding for both School and College modes |
+| **Per-User Data** | Your inputs and results are saved; pick up where you left off |
+| **History** | Browse, compare, and restore any past timetable |
+| **4 Views** | Grid, Faculty, Student, and Analytics views |
+| **Excel Import/Export** | Bulk-load faculty & courses from `.xlsx`; export full timetable |
+| **Secure Auth** | JWT-based login with row-level database security |
 
 ---
 
@@ -109,8 +109,8 @@ Click **"+ New Timetable"** on the Dashboard. You will be prompted to select a *
 
 | Workflow | Best for | Wizard steps |
 |---|---|---|
-| 🏫 **School** | K-12 schools, class-based schedules | Institution → Classes → Subjects → Teachers → Schedule → Rooms → Rules |
-| 🏛️ **College** | Universities, elective-based scheduling | Institution → Courses → Faculty → Rooms → Schedule → Constraints → Generate |
+| **School** | K-12 schools, class-based schedules | Institution → Classes → Subjects → Teachers → Schedule → Rooms → Rules |
+| **College** | Universities, elective-based scheduling | Institution → Courses → Faculty → Rooms → Schedule → Constraints → Generate |
 
 Click your workflow to begin. The 7-step wizard opens with a **progress bar** at the top and a **Live Draft Preview** panel on the right.
 
@@ -140,10 +140,10 @@ Click **Continue to Classes →** when done.
 
 - Click **+ Add class** to add a row.
 - For each class, enter:
-  - **Name** — e.g., `10-A`, `Grade 9 Section B`
-  - **Size** — number of students (used for room capacity matching)
+ - **Name** — e.g., `10-A`, `Grade 9 Section B`
+ - **Size** — number of students (used for room capacity matching)
 - Repeat for all classes.
-- Use the **🗑 delete** icon to remove unwanted rows.
+- Use the ** delete** icon to remove unwanted rows.
 
 > **Tip:** Add all sections of the same grade as separate entries (e.g., `10-A`, `10-B`, `10-C`).
 
@@ -168,7 +168,7 @@ For each subject row:
 
 - Click **+ Add subject** to add more rows.
 - The **Live Draft Preview** panel on the right updates in real time, showing how full the schedule is and a miniature timetable grid.
-- Use **📤 Import CSV** to bulk-load a prepared spreadsheet (see [Section 11](#11-bulk-import-via-excel)).
+- Use ** Import CSV** to bulk-load a prepared spreadsheet (see [Section 11](#11-bulk-import-via-excel)).
 
 > **Important:** The `Code` must be **unique** for each subject. If two subjects share a code the solver will reject the input.
 
@@ -189,7 +189,7 @@ For each teacher:
 
 - Click **+ Add teacher** to add rows.
 - A teacher can teach multiple subjects — select all applicable codes from the dropdown.
-- Use **📤 Import from Excel** for bulk entry.
+- Use ** Import from Excel** for bulk entry.
 
 > **Warning:** If a subject has no qualified teacher assigned, the solver will detect the conflict and the **Auto-Resolve** dialog will suggest adding one automatically.
 
@@ -275,9 +275,9 @@ Click **+ Add preference**, choose the type, fill in the target and timing, and 
 #### Generating the Timetable
 
 1. Review that all data looks correct in the **Live Draft Preview** sidebar.
-2. Click **⚡ Generate timetable**.
+2. Click ** Generate timetable**.
 3. A **solving overlay** appears showing real-time progress:
-   - Validating problem → Building model → Running diagnostics → CP-SAT search → Extracting solution
+ - Validating problem → Building model → Running diagnostics → CP-SAT search → Extracting solution
 4. Typically completes in **under 60 seconds**.
 5. On success, you are automatically redirected to the **Timetable Grid view**.
 
@@ -310,7 +310,7 @@ For each course:
 
 > **Lab courses** are automatically scheduled **back-to-back** (consecutive periods) by the solver — no extra configuration needed.
 
-Use **📤 Import from Excel** to upload a course list spreadsheet.
+Use ** Import from Excel** to upload a course list spreadsheet.
 
 ---
 
@@ -365,7 +365,7 @@ All **8 hard constraints** are available in College mode:
 
 ### College Step 7: Generate
 
-Same generation flow as School Step 7. Click **⚡ Generate timetable**. The College solver handles significantly more variables (~1,428 variables, ~8,214 constraints) but still completes in under 60 seconds for typical institutions.
+Same generation flow as School Step 7. Click ** Generate timetable**. The College solver handles significantly more variables (~1,428 variables, ~8,214 constraints) but still completes in under 60 seconds for typical institutions.
 
 ---
 
@@ -450,14 +450,14 @@ The exported `.xlsx` file contains **three sheets** accessible via tabs at the b
 
 ### How to export to Excel
 
-1. From any timetable view, click **📥 Export** (bottom-right or top-right toolbar).
+1. From any timetable view, click ** Export** (bottom-right or top-right toolbar).
 2. Select **"Download Excel"**.
 3. The file downloads automatically as `[InstitutionName]_Timetable.xlsx`.
 4. Open in Microsoft Excel, LibreOffice, or Google Sheets.
 
 ### How to export PDFs
 
-1. Click **📥 Export**.
+1. Click ** Export**.
 2. Select the view you want (Class Grid, Faculty, Student, Analytics).
 3. Click **"Download PDF"** — the currently visible view is saved as a PDF file.
 
@@ -479,7 +479,7 @@ Access it via:
 | **Preview** | Click any entry to see a compact grid preview |
 | **Restore** | Click **"Restore"** to reload that timetable's full setup and result |
 | **Compare** | Use **"Compare"** to open two timetables side by side |
-| **Delete** | Click the **🗑 Delete** icon; confirm the prompt to permanently remove a snapshot |
+| **Delete** | Click the ** Delete** icon; confirm the prompt to permanently remove a snapshot |
 
 > **Restore** loads the timetable's **full input state** as well (teachers, subjects, rooms, schedule settings). This lets you tweak inputs and re-generate from a historical baseline.
 
@@ -503,9 +503,9 @@ When the solver detects constraint violations or can't place all sessions, it sh
 
 1. The **Auto Resolve** modal appears after generation, showing the number of fixes proposed.
 2. Each fix is listed with a checkmark — e.g.:
-   - *"Added 1 extra teacher(s) for 'ENG'"*
-   - *"Added 1 extra teacher(s) for 'MAT'"*
-   - *"Added 1 room(s) to match class count"*
+ - *"Added 1 extra teacher(s) for 'ENG'"*
+ - *"Added 1 extra teacher(s) for 'MAT'"*
+ - *"Added 1 room(s) to match class count"*
 3. Click **"Accept & Apply All"** to apply every fix and immediately re-run the solver.
 4. Click **Cancel** to dismiss and manually correct the inputs yourself in earlier steps.
 
@@ -558,23 +558,23 @@ Your `.xlsx` file should have the following columns (first row = header):
 
 | Column | Required | Example |
 |---|---|---|
-| `name` | ✅ | `Dr. Jane Smith` |
-| `subjects` | ✅ | `MATH,PHY` (comma-separated codes) |
-| `max_hours_per_week` | ❌ (College only) | `16` |
+| `name` | | `Dr. Jane Smith` |
+| `subjects` | | `MATH,PHY` (comma-separated codes) |
+| `max_hours_per_week` | (College only) | `16` |
 
 ### Subject/Course import template
 
 | Column | Required | Example |
 |---|---|---|
-| `name` | ✅ | `Mathematics` |
-| `code` | ✅ | `MATH` |
-| `periods_per_week` | ✅ | `5` |
-| `target_classes` | ✅ | `10-A,10-B` |
+| `name` | | `Mathematics` |
+| `code` | | `MATH` |
+| `periods_per_week` | | `5` |
+| `target_classes` | | `10-A,10-B` |
 
 ### Steps to import
 
 1. Prepare your `.xlsx` file using the columns above.
-2. In the **Teachers** or **Subjects** wizard step, click **📤 Import from Excel**.
+2. In the **Teachers** or **Subjects** wizard step, click ** Import from Excel**.
 3. Select your file.
 4. Imported rows appear in the table — review and correct any highlighted errors.
 5. Continue to the next step.
@@ -585,28 +585,28 @@ Your `.xlsx` file should have the following columns (first row = header):
 
 ### "No valid subjects found"
 
-**Cause:** Step 3 (Subjects) was skipped or all subject rows are empty.  
+**Cause:** Step 3 (Subjects) was skipped or all subject rows are empty.
 **Fix:** Go back to Step 3 and add at least one subject with a name and code.
 
 ---
 
 ### "No valid classes found"
 
-**Cause:** Step 2 (Classes) was skipped or all class rows are empty.  
+**Cause:** Step 2 (Classes) was skipped or all class rows are empty.
 **Fix:** Go back to Step 2 and add at least one class.
 
 ---
 
 ### "Cannot reach backend"
 
-**Cause:** The backend server is not responding (likely a cold start on Render's free tier).  
+**Cause:** The backend server is not responding (likely a cold start on Render's free tier).
 **Fix:** Wait 30–60 seconds and try again. Render free instances sleep after inactivity and need time to wake up.
 
 ---
 
 ### "Solver took too long"
 
-**Cause:** The problem is too large or too constrained for the solver to find a solution within the timeout.  
+**Cause:** The problem is too large or too constrained for the solver to find a solution within the timeout.
 **Fix options:**
 - Reduce **periods per week** for some subjects.
 - Add more **rooms**.
@@ -618,14 +618,14 @@ Your `.xlsx` file should have the following columns (first row = header):
 
 ### Timetable generated but some sessions are missing
 
-**Cause:** The solver couldn't place every session (reported as "unplaced sessions" in Analytics).  
+**Cause:** The solver couldn't place every session (reported as "unplaced sessions" in Analytics).
 **Fix:** Check Analytics View → Unplaced sessions. Common causes: not enough rooms, teacher overloaded, too many periods per week relative to available slots.
 
 ---
 
 ### "INFEASIBLE" result
 
-**Cause:** The constraints make it mathematically impossible to produce any valid timetable.  
+**Cause:** The constraints make it mathematically impossible to produce any valid timetable.
 **Fix:** Review Analytics for the most violated constraint, then loosen it — e.g., reduce required periods, add more rooms, or add more teachers.
 
 ---
@@ -638,42 +638,42 @@ Your `.xlsx` file should have the following columns (first row = header):
 
 ## 13. FAQ
 
-**Q: Can I use TT-Scheduler for both a school and a college?**  
+**Q: Can I use TT-Scheduler for both a school and a college?**
 A: Yes. You can create separate timetable runs — one using the School workflow and another using the College workflow — all under the same account.
 
 ---
 
-**Q: Is my data safe?**  
+**Q: Is my data safe?**
 A: Yes. All data is stored in Supabase with **Row-Level Security** (RLS) enabled — only your account can read or write your data. Authentication uses industry-standard JWT tokens.
 
 ---
 
-**Q: How many classes/teachers/subjects can I add?**  
+**Q: How many classes/teachers/subjects can I add?**
 A: There is no hard UI limit. However, very large problems (100+ classes, 200+ teachers) may increase solve time. For best results, keep the number of periods per week reasonable and ensure teacher capacity matches demand.
 
 ---
 
-**Q: Can I edit a timetable after it's generated?**  
+**Q: Can I edit a timetable after it's generated?**
 A: TT-Scheduler does not support manual cell editing yet. To change the schedule, modify your inputs (teachers, subjects, rooms, rules) and click **Generate** again. Your new timetable is saved alongside the previous one in History.
 
 ---
 
-**Q: What happens if I close the browser mid-wizard?**  
+**Q: What happens if I close the browser mid-wizard?**
 A: Your inputs are auto-saved at every step. When you log back in, TT-Scheduler restores your session automatically — you won't lose any data.
 
 ---
 
-**Q: Can I download my timetable for offline use?**  
+**Q: Can I download my timetable for offline use?**
 A: Yes. Use the Export feature to download an Excel (.xlsx) file or PDFs. These can be shared, printed, or opened offline.
 
 ---
 
-**Q: What's the difference between hard constraints and soft preferences?**  
+**Q: What's the difference between hard constraints and soft preferences?**
 A: **Hard constraints** are never violated — if they can't be satisfied, the solver fails and reports a conflict. **Soft preferences** are best-effort — the solver tries to honour them but will still produce a schedule even if it can't.
 
 ---
 
-**Q: Can multiple users collaborate on the same timetable?**  
+**Q: Can multiple users collaborate on the same timetable?**
 A: Not currently — each account is independent. Sharing a timetable requires exporting it (Excel/PDF) and sending the file.
 
 ---
@@ -684,9 +684,9 @@ A: Not currently — each account is independent. Sharing a timetable requires e
 
 <div align="center">
 
-**TT-Scheduler** — Conflict-free timetables in seconds.  
-Built with ❤️ and Google OR-Tools CP-SAT.
+**TT-Scheduler** — Conflict-free timetables in seconds.
+Built with and Google OR-Tools CP-SAT.
 
-[🌐 Live App](https://tt-scheduler.vercel.app) &nbsp;•&nbsp; [📄 API Docs](https://tt-scheduler.onrender.com/api/v1/docs)
+[ Live App](https://tt-scheduler.vercel.app) &nbsp;•&nbsp; [ API Docs](https://tt-scheduler.onrender.com/api/v1/docs)
 
 </div>
