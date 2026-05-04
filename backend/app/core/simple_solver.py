@@ -55,12 +55,23 @@ def solve_timetable(problem: Dict[str, Any]) -> Dict[str, Any]:
     # Fast fail if pre-check reveals impossible constraints (e.g. missing teachers, capacity limits)
     if any(w.get("level") == "error" for w in warnings):
         logger.warning("Fail-fast triggered due to pre-check errors. Returning to frontend for Auto-Fix.")
-        time_slots = _generate_time_slots(
+        constraints_pre = problem.get("constraints", {}) or {}
+        lunch_after_pre = int(constraints_pre.get("lunch_after_period", 0))
+        lunch_dur_pre = int(problem.get("lunch_duration_minutes", 0))
+        period_slots_pre = _generate_time_slots(
             problem.get("start_time", "08:00"),
             int(problem.get("periods_per_day", 7)),
-            int(problem.get("period_duration_minutes", 45))
+            int(problem.get("period_duration_minutes", 45)),
+            lunch_after_period=lunch_after_pre,
+            lunch_duration_minutes=lunch_dur_pre,
         )
-        fast_fail_result = _empty_result(problem, time_slots, problem.get("working_days", []), "Precheck")
+        from app.core.solver_shared import build_lunch_slot as _build_lunch_slot_pre
+        lunch_slot_pre = _build_lunch_slot_pre(period_slots_pre, lunch_after_pre, lunch_dur_pre)
+        if lunch_slot_pre:
+            display_slots_pre = period_slots_pre[:lunch_after_pre] + [lunch_slot_pre] + period_slots_pre[lunch_after_pre:]
+        else:
+            display_slots_pre = list(period_slots_pre)
+        fast_fail_result = _empty_result(problem, display_slots_pre, problem.get("working_days", []), "Precheck")
         fast_fail_result["warnings"] = warnings
         return fast_fail_result
 
@@ -78,9 +89,9 @@ def solve_timetable(problem: Dict[str, Any]) -> Dict[str, Any]:
         unplaced = result["stats"]["unplaced_sessions"]
         warnings.append({
             "level": "warning",
-            "code": "UNPLACED_SESSIONS",
+            "code": "UNPLACED_SESSION",
             "message": f"Solver could not fit {unplaced} session(s) due to constraints.",
-            "detail": {"unplaced_count": unplaced}
+            "detail": {"unplaced_count": unplaced, "fix": "Add more teachers or rooms, or reduce periods_per_week"}
         })
 
     # Merge pre-solve warnings with any placement warnings from greedy
@@ -109,7 +120,7 @@ def _diagnose_problem(problem: Dict[str, Any]) -> List[Dict[str, Any]]:
     constraints  = problem.get("constraints", {}) or {}
     lunch_after  = int(constraints.get("lunch_after_period", 0))
 
-    usable_ppd   = ppd - (1 if lunch_after > 0 else 0)
+    usable_ppd   = ppd  # all periods are schedulable; lunch is a gap, not a sacrificed period
     slots_pw     = len(working_days) * usable_ppd  # slots per class per week
 
     subj_codes   = {s["code"] for s in subjects}
@@ -161,8 +172,12 @@ def _diagnose_problem(problem: Dict[str, Any]) -> List[Dict[str, Any]]:
         })
 
     # 4. Per-subject teacher capacity check
-    #    A teacher can cover at most slots_pw sessions per week.
-    #    If one subject needs N_classes × ppw sessions but teacher capacity < that, warn.
+    #    A teacher's true weekly cap is bounded by both raw slots_pw AND the
+    #    max_periods_per_day cap. Additionally, the same-teacher-per-class
+    #    rule means each teacher can fully serve only floor(cap / ppw) classes
+    #    for that subject. Use the tighter of the two as the realistic cap.
+    max_per_day = int(constraints.get("max_periods_per_day_per_teacher", 8))
+    per_teacher_week_cap = min(slots_pw, max_per_day * len(working_days))
     for subj in subjects:
         ppw = int(subj.get("periods_per_week", 3))
         tc = subj.get("target_classes", [])
@@ -172,18 +187,27 @@ def _diagnose_problem(problem: Dict[str, Any]) -> List[Dict[str, Any]]:
             t for t in teachers
             if subj["code"] in t.get("subjects", [])
         ]
-        teacher_capacity = len(qualified_teachers) * slots_pw
-        if qualified_teachers and sessions_for_subj > teacher_capacity:
+        # Realistic capacity factors in same-teacher-per-class: each qualified
+        # teacher can fully serve floor(per_teacher_week_cap / ppw) classes.
+        classes_per_teacher = max(1, per_teacher_week_cap // max(1, ppw))
+        realistic_capacity = len(qualified_teachers) * classes_per_teacher * ppw
+        if qualified_teachers and sessions_for_subj > realistic_capacity:
             issues.append({
                 "level":   "error",
                 "code":    "TEACHER_CAPACITY_EXCEEDED",
                 "message": f"'{subj['name']}' needs {sessions_for_subj} sessions/week "
-                           f"but qualified teacher(s) can only cover {teacher_capacity} slots. "
+                           f"but qualified teacher(s) can only realistically cover {realistic_capacity} slots "
+                           f"(each teacher caps at {per_teacher_week_cap} periods/week and must teach all "
+                           f"sessions of a (class, subject) pair). "
                            f"Add more teachers for this subject or reduce periods_per_week.",
                 "detail":  {
                     "subject":            subj["code"],
                     "sessions_needed":    sessions_for_subj,
-                    "teacher_capacity":   teacher_capacity,
+                    "teacher_capacity":   realistic_capacity,
+                    "per_teacher_week_cap": per_teacher_week_cap,
+                    "classes_per_teacher": classes_per_teacher,
+                    "ppw":                ppw,
+                    "n_classes":          len(affected_classes),
                     "qualified_teachers": [t["name"] for t in qualified_teachers],
                 },
             })
@@ -232,7 +256,7 @@ def _preprocess(problem: Dict[str, Any]) -> Dict[str, Any]:
     days        = len(problem.get("working_days", []))
     ppd         = max(1, int(problem.get("periods_per_day", 7)))
     lunch_after = int((problem.get("constraints") or {}).get("lunch_after_period", 0))
-    usable_ppd  = ppd - (1 if lunch_after > 0 else 0)
+    usable_ppd  = ppd  # all periods are schedulable; lunch is a gap, not a sacrificed period
     slots_per_week = days * usable_ppd          # absolute maximum sessions/week/class
 
     # Cap periods_per_week
@@ -294,20 +318,33 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
     ppd          = int(problem.get("periods_per_day", 7))
     constraints  = problem.get("constraints", {})
     lunch_after  = int(constraints.get("lunch_after_period", 0))
+    lunch_dur    = int(problem.get("lunch_duration_minutes", 0))
     max_consec   = int(constraints.get("max_consecutive_periods", 3))
     max_per_day_teacher = int(constraints.get("max_periods_per_day_per_teacher", 6))
 
     D = len(working_days)
     P = ppd
 
-    # Valid period indices (skip lunch slot)
-    valid_periods = [p for p in range(P) if lunch_after == 0 or p != lunch_after - 1]
+    # All periods are schedulable — lunch is a visual gap between periods,
+    # not a period that's skipped. With lunch_after=K, period times after
+    # K are shifted by lunch_dur so display times remain accurate.
+    valid_periods = list(range(P))
     n_valid = len(valid_periods)
 
-    time_slots = _generate_time_slots(
+    # Period times account for the lunch gap (periods after lunch shift later)
+    period_slots = _generate_time_slots(
         problem.get("start_time", "08:00"), P,
-        int(problem.get("period_duration_minutes", 45))
+        int(problem.get("period_duration_minutes", 45)),
+        lunch_after_period=lunch_after,
+        lunch_duration_minutes=lunch_dur,
     )
+    # Display slots: insert a lunch entry between period K and K+1 for the grid to render
+    from app.core.solver_shared import build_lunch_slot as _build_lunch_slot
+    lunch_slot = _build_lunch_slot(period_slots, lunch_after, lunch_dur)
+    if lunch_slot:
+        display_slots = period_slots[:lunch_after] + [lunch_slot] + period_slots[lunch_after:]
+    else:
+        display_slots = list(period_slots)
 
     # Subject code → index
     subj_idx = {s["code"]: i for i, s in enumerate(subjects)}
@@ -339,7 +376,7 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
 
     S = len(sessions)
     if S == 0:
-        return _empty_result(problem, time_slots, working_days, "CP-SAT")
+        return _empty_result(problem, display_slots, working_days, "CP-SAT")
 
     logger.info(f"CP-SAT: {S} sessions, {D} days, {P} periods ({n_valid} usable), "
                 f"{len(teachers)} teachers, {len(rooms)} rooms")
@@ -465,11 +502,17 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
 
     # 5. Soft: max periods per day per teacher (hard cap if asked)
     # Convert to hard constraint for max_per_day_teacher
+    # Only generate BoolVars for (teacher, session) pairs where the teacher
+    # is actually qualified to teach that subject — matches the college solver's
+    # approach and reduces variable count by ~5x in typical schools.
     for ti in range(len(teachers)):
+        teachable = teacher_can[ti]
         for d in range(D):
             # Count sessions for teacher ti on day d
             indicators = []
-            for s in range(S):
+            for s, (ci, si) in enumerate(sessions):
+                if si not in teachable:
+                    continue
                 is_this_teacher_day = model.NewBoolVar(f"htd_{ti}_{d}_{s}")
                 t_match = model.NewBoolVar(f"tmatch_{ti}_{d}_{s}")
                 d_match = model.NewBoolVar(f"dmatch_{ti}_{d}_{s}")
@@ -488,8 +531,11 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
         max_pw = t.get("max_periods_per_week")
         if max_pw is not None:
             max_pw = int(max_pw)
+            teachable = teacher_can[ti]
             indicators = []
-            for s in range(S):
+            for s, (ci, si) in enumerate(sessions):
+                if si not in teachable:
+                    continue
                 is_this_teacher_week = model.NewBoolVar(f"hw_{ti}_{s}")
                 t_match = model.NewBoolVar(f"tmatch_w_{ti}_{s}")
                 model.Add(t_var[s] == ti).OnlyEnforceIf(t_match)
@@ -520,15 +566,29 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
             penalty_terms.append(var * w)
 
     # ── Objective ──────────────────────────────────────────
-    reward_scheduled = sum(is_scheduled[s] * 10000 for s in range(S))
+    # Heavily prioritize scheduling all sessions over soft constraints
+    reward_scheduled = sum(is_scheduled[s] * 1_000_000 for s in range(S))
     if penalty_terms:
         model.Maximize(reward_scheduled - sum(penalty_terms))
     else:
         model.Maximize(reward_scheduled)
 
+    # Hint: try scheduling everything first — biases search toward complete solutions
+    for s in range(S):
+        model.AddHint(is_scheduled[s], 1)
+
+    # Decision strategy: branch on is_scheduled vars first, choosing 1 (true).
+    # This forces CP-SAT to explore "everything scheduled" branch first, finding
+    # complete solutions early instead of wasting time on partial schedules.
+    model.AddDecisionStrategy(
+        is_scheduled,
+        cp_model.CHOOSE_FIRST,
+        cp_model.SELECT_MAX_VALUE,
+    )
+
     # ── Solve ──────────────────────────────────────────────
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 30.0
+    solver.parameters.max_time_in_seconds = problem.get("solve_time_limit_seconds", 120.0)
     solver.parameters.num_search_workers = 4   # parallel search
     solver.parameters.log_search_progress = False
 
@@ -549,7 +609,7 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
             p  = valid_periods[vp]   # actual 0-based period index
             ti = solver.Value(t_var[s])
             ri = solver.Value(r_var[s])
-            slot = time_slots[p] if p < len(time_slots) else {"start": "?", "end": "?"}
+            slot = period_slots[p] if p < len(period_slots) else {"start": "?", "end": "?"}
             assignments.append({
                 "class_name":    classes[ci]["name"],
                 "class_index":   ci,
@@ -566,17 +626,18 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
                 "end_time":      slot["end"],
             })
 
-        grid = _build_grid(assignments, classes, working_days, time_slots)
+        grid = _build_grid(assignments, classes, working_days, period_slots)
         return {
-            "success":      True,
-            "solver":       "CP-SAT",
-            "status":       solver.StatusName(status),
-            "solve_time":   elapsed,
-            "assignments":  assignments,
-            "grid":         grid,
-            "time_slots":   time_slots,
-            "working_days": working_days,
-            "warnings":     [],
+            "success":            True,
+            "solver":             "CP-SAT",
+            "status":             solver.StatusName(status),
+            "solve_time":         elapsed,
+            "assignments":        assignments,
+            "grid":               grid,
+            "time_slots":         display_slots,
+            "working_days":       working_days,
+            "lunch_period_index": -1,  # frontend detects lunch via slot.is_lunch flag in display_slots
+            "warnings":           [],
             "stats": {
                 "total_assignments":  len(assignments),
                 "unplaced_sessions":  unplaced_count,
@@ -591,7 +652,7 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
         }
     else:
         logger.warning(f"CP-SAT failed completely: {solver.StatusName(status)}")
-        return _empty_result(problem, time_slots, working_days, "CP-SAT")
+        return _empty_result(problem, display_slots, working_days, "CP-SAT")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -614,13 +675,22 @@ def _greedy_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
     ppd          = int(problem.get("periods_per_day", 7))
     constraints  = problem.get("constraints", {})
     lunch_after  = int(constraints.get("lunch_after_period", 0))
+    lunch_dur    = int(problem.get("lunch_duration_minutes", 0))
 
-    time_slots = _generate_time_slots(
+    period_slots = _generate_time_slots(
         problem.get("start_time", "08:00"), ppd,
-        int(problem.get("period_duration_minutes", 45))
+        int(problem.get("period_duration_minutes", 45)),
+        lunch_after_period=lunch_after,
+        lunch_duration_minutes=lunch_dur,
     )
+    from app.core.solver_shared import build_lunch_slot as _build_lunch_slot
+    lunch_slot = _build_lunch_slot(period_slots, lunch_after, lunch_dur)
+    if lunch_slot:
+        display_slots = period_slots[:lunch_after] + [lunch_slot] + period_slots[lunch_after:]
+    else:
+        display_slots = list(period_slots)
 
-    valid_periods = [p for p in range(ppd) if lunch_after == 0 or p != lunch_after - 1]
+    valid_periods = list(range(ppd))
     subj_idx = {s["code"]: i for i, s in enumerate(subjects)}
 
     teacher_can: List[Any] = []
@@ -680,7 +750,7 @@ def _greedy_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
                     teacher_busy[(ti, d, p)] = True
                     room_busy[(ri, d, p)] = True
                     class_slot_busy[(ci, d, p)] = True
-                    slot = time_slots[p] if p < len(time_slots) else {"start": "?", "end": "?"}
+                    slot = period_slots[p] if p < len(period_slots) else {"start": "?", "end": "?"}
                     assignments.append({
                         "class_name":    cls["name"],
                         "class_index":   ci,
@@ -757,17 +827,18 @@ def _greedy_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
                 })
 
     elapsed = round((datetime.now() - t0).total_seconds(), 3)
-    grid = _build_grid(assignments, classes, working_days, time_slots)
+    grid = _build_grid(assignments, classes, working_days, period_slots)
     return {
-        "success":      True,
-        "solver":       "Greedy",
-        "status":       "FEASIBLE",
-        "solve_time":   elapsed,
-        "assignments":  assignments,
-        "grid":         grid,
-        "time_slots":   time_slots,
-        "working_days": working_days,
-        "warnings":     placement_warnings,
+        "success":            True,
+        "solver":             "Greedy",
+        "status":             "FEASIBLE",
+        "solve_time":         elapsed,
+        "assignments":        assignments,
+        "grid":               grid,
+        "time_slots":         display_slots,
+        "working_days":       working_days,
+        "lunch_period_index": -1,  # frontend detects lunch via slot.is_lunch flag in display_slots
+        "warnings":           placement_warnings,
         "stats": {
             "total_assignments":   len(assignments),
             "unplaced_sessions":   len(placement_warnings),

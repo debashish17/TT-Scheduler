@@ -20,9 +20,14 @@ def generate_time_slots(
     start_time: str,
     periods_per_day: int,
     period_duration_minutes: int,
+    lunch_after_period: int = 0,
+    lunch_duration_minutes: int = 0,
 ) -> List[Dict[str, Any]]:
     """
-    Build a list of time slot dicts for a school day.
+    Build a list of teaching-period time slot dicts for a school day.
+    Returns exactly `periods_per_day` entries (no lunch entry inserted).
+    When lunch_after_period > 0, periods after the lunch break have their
+    times shifted by lunch_duration_minutes so timings are accurate.
     Returns: [{ period, start, end, label }, ...]  (period is 1-based)
     """
     slots = []
@@ -31,13 +36,46 @@ def generate_time_slots(
     for i in range(periods_per_day):
         end = current + timedelta(minutes=period_duration_minutes)
         slots.append({
-            "period": i + 1,
-            "start":  current.strftime("%H:%M"),
-            "end":    end.strftime("%H:%M"),
-            "label":  f"Period {i + 1}",
+            "period":   i + 1,
+            "start":    current.strftime("%H:%M"),
+            "end":      end.strftime("%H:%M"),
+            "label":    f"Period {i + 1}",
         })
         current = end
+        # Insert lunch gap into the timeline (but not as a slot) after period K
+        if lunch_after_period > 0 and lunch_duration_minutes > 0 and (i + 1) == lunch_after_period:
+            current = current + timedelta(minutes=lunch_duration_minutes)
     return slots
+
+
+LUNCH_PERIOD_SENTINEL = 0  # 0 is invalid for real periods (1-based), used to mark lunch column
+
+def build_lunch_slot(
+    period_slots: List[Dict[str, Any]],
+    lunch_after_period: int,
+    lunch_duration_minutes: int,
+) -> Dict[str, Any]:
+    """
+    Build a synthetic lunch slot dict that sits between period K and K+1.
+    Returns None if lunch is not configured. The lunch slot uses period=0 as
+    a sentinel so the frontend can identify it via slot.period == lunchPeriod
+    where lunchPeriod is also 0.
+    """
+    if lunch_after_period <= 0 or lunch_duration_minutes <= 0:
+        return None
+    if lunch_after_period > len(period_slots):
+        return None
+    after_slot = period_slots[lunch_after_period - 1]
+    h, m = map(int, after_slot["end"].split(":"))
+    start_dt = datetime(2000, 1, 1, h, m)
+    end_dt = start_dt + timedelta(minutes=lunch_duration_minutes)
+    return {
+        "period":   LUNCH_PERIOD_SENTINEL,
+        "start":    start_dt.strftime("%H:%M"),
+        "end":      end_dt.strftime("%H:%M"),
+        "label":    "Lunch",
+        "is_lunch": True,
+    }
 
 
 def build_grid(
@@ -68,16 +106,21 @@ def empty_result(
     Return a zero-assignment result envelope with the standard shape.
     Used on fast-fail and as a safe default on unexpected errors.
     """
+    constraints = problem.get("constraints", {}) if isinstance(problem, dict) else {}
+    lunch_after = int(constraints.get("lunch_after_period", 0))
+    lunch_dur = int(problem.get("lunch_duration_minutes", 0)) if isinstance(problem, dict) else 0
+    has_lunch = lunch_after > 0 and lunch_dur > 0
     return {
-        "success":      True,
-        "solver":       solver_name,
-        "status":       "FEASIBLE",
-        "solve_time":   0,
-        "assignments":  [],
-        "grid":         {},
-        "time_slots":   time_slots,
-        "working_days": working_days,
-        "warnings":     [],
+        "success":            True,
+        "solver":             solver_name,
+        "status":             "FEASIBLE",
+        "solve_time":         0,
+        "assignments":        [],
+        "grid":               {},
+        "time_slots":         time_slots,
+        "working_days":       working_days,
+        "lunch_period_index": lunch_after if has_lunch else -1,
+        "warnings":           [],
         "stats": {
             "total_assignments":  0,
             "unplaced_sessions":  0,

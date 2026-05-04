@@ -14,12 +14,12 @@ export function buildSubjectColor(codes: string[]): Record<string, string> {
 // ─── Cell variants ────────────────────────────────────────────────────────────
 
 interface SlotHeaderProps {
-  slot: { period: number; start: string; end: string };
+  slot: { period: number; start: string; end: string; is_lunch?: boolean };
   lunchPeriod: number;
 }
 
 export const SlotHeader: React.FC<SlotHeaderProps> = ({ slot, lunchPeriod }) => {
-  const isLunch = slot.period === lunchPeriod;
+  const isLunch = !!slot.is_lunch || slot.period === lunchPeriod;
   return (
     <th scope="col" className="px-3 py-3 text-center"
       style={{
@@ -194,12 +194,15 @@ export const SchoolTable: React.FC<SchoolTableProps> = ({
     grid[a.day][a.period] = a;
   });
 
+  const isLunchSlot = (s: any) => !!s.is_lunch || s.period === lunchPeriod;
+  const slotKey = (s: any, i: number) => (isLunchSlot(s) ? `lunch-${i}` : `p-${s.period}`);
+
   return (
     <table className="w-full" style={{ borderCollapse: 'collapse', minWidth: 700 }}>
       <colgroup>
         <col style={{ width: 72 }} />
-        {periods.map(slot => (
-          <col key={slot.period} style={{ width: slot.period === lunchPeriod ? 100 : undefined }} />
+        {periods.map((slot, i) => (
+          <col key={slotKey(slot, i)} style={{ width: isLunchSlot(slot) ? 100 : undefined }} />
         ))}
       </colgroup>
       <thead>
@@ -208,18 +211,18 @@ export const SchoolTable: React.FC<SchoolTableProps> = ({
             style={{ borderRight: '1px solid rgba(255,255,255,0.1)' }}>
             Day
           </th>
-          {periods.map(slot => <SlotHeader key={slot.period} slot={slot} lunchPeriod={lunchPeriod} />)}
+          {periods.map((slot, i) => <SlotHeader key={slotKey(slot, i)} slot={slot} lunchPeriod={lunchPeriod} />)}
         </tr>
       </thead>
       <tbody>
         {working_days.map(day => (
           <tr key={day} style={{ borderTop: '2px solid var(--line)' }}>
             <DayHeaderCell day={day} />
-            {periods.map(slot => {
-              if (slot.period === lunchPeriod) return <LunchCell key={slot.period} slot={slot} />;
+            {periods.map((slot, i) => {
+              if (isLunchSlot(slot)) return <LunchCell key={slotKey(slot, i)} slot={slot} />;
               return (
                 <SchoolCell
-                  key={slot.period}
+                  key={slotKey(slot, i)}
                   assignment={grid[day]?.[slot.period]}
                   subjectColor={subjectColor}
                   secondaryField={secondaryField}
@@ -296,7 +299,7 @@ export const CollegeTable: React.FC<CollegeTableProps> = ({
                 </td>
               )}
               {periods.map(slot => {
-                if (slot.period === lunchPeriod) return <LunchCell key={slot.period} slot={slot} rowSpan={hasLab ? 2 : 1} />;
+                if ((slot as any).is_lunch || slot.period === lunchPeriod) return <LunchCell key={slot.period} slot={slot} rowSpan={hasLab ? 2 : 1} />;
                 return (
                   <CollegeCell
                     key={slot.period}
@@ -314,7 +317,7 @@ export const CollegeTable: React.FC<CollegeTableProps> = ({
                   LAB
                 </td>
                 {periods.map(slot => {
-                  if (slot.period === lunchPeriod) return null;
+                  if ((slot as any).is_lunch || slot.period === lunchPeriod) return null;
                   return (
                     <CollegeCell
                       key={slot.period}

@@ -308,7 +308,7 @@ export { apiClient };
 
 // Simple timetable generation (no DB setup needed)
 export const simpleTimetableAPI = {
-  generate: (data) => apiClient.post('/timetable/generate-simple', data, { timeout: 90000 }),
+  generate: (data) => apiClient.post('/timetable/generate-simple', data, { timeout: 180000 }),
   generateCollege: (data) => apiClient.post('/timetable/generate-college', data, { timeout: 300000 }),
 
   // Compute analytics from solver result (real data, no DB)
