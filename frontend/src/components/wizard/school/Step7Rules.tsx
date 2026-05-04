@@ -89,9 +89,17 @@ function computeAllFixes(
       if (!seen.has(k)) {
         seen.add(k);
         const qualifiedCount = d.qualified_teachers?.length || 1;
-        const singleCapacity = Math.floor(d.teacher_capacity / Math.max(1, qualifiedCount)) || 40;
-        const shortage = d.sessions_needed - d.teacher_capacity;
-        const needed = Math.max(1, Math.ceil(shortage / singleCapacity));
+        // Use the realistic per-teacher capacity if backend provided it
+        // (factors in max_per_day_teacher and same-teacher-per-class rule).
+        const classesPerTeacher = Math.max(1, d.classes_per_teacher || 1);
+        const ppw = Math.max(1, d.ppw || 3);
+        const nClasses = Math.max(1, d.n_classes || 1);
+        // Total teachers needed = ceil(n_classes / classes_per_teacher).
+        // Add +1 buffer so CP-SAT has slack for the same-teacher-per-class
+        // and no-consecutive-same-subject constraints (avoids unfit sessions).
+        // Subtract existing qualified teachers.
+        const totalTeachersNeeded = Math.ceil(nClasses / classesPerTeacher) + 1;
+        const needed = Math.max(1, totalTeachersNeeded - qualifiedCount);
 
         let count = 1;
         for (let i = 0; i < needed; i++) {
@@ -125,24 +133,42 @@ function computeAllFixes(
     }
 
     if (w.code === 'UNPLACED_SESSION') {
-      const sc = d.subject as string;
+      const sc = d.subject as string | undefined;
       const fix = ((d.fix as string) || '').toLowerCase();
-      if (fix.includes('teacher') && !seen.has(`up_t_${sc}`)) {
-        seen.add(`up_t_${sc}`);
-        teachers.push({ name: `Extra Teacher (${sc})`, subjects: [sc] });
-        log.push(`✔ Added teacher for unplaced "${sc}" session`);
-      } else if (fix.includes('room') && !seen.has('up_room')) {
-        seen.add('up_room');
-        rooms.push({ name: `Room ${rooms.length + 1}`, capacity: 40 });
-        log.push('✔ Added room for unplaced session');
-      } else if (!seen.has(`up_ppw_${sc}`) && !seen.has('reduce_ppw')) {
-        seen.add(`up_ppw_${sc}`);
-        subjects = subjects.map((s: any) =>
-          s.code === sc
-            ? { ...s, periods_per_week: Math.max(1, (parseInt(s.periods_per_week) || 3) - 1) }
-            : s,
-        );
-        log.push(`✔ Reduced periods/week for "${sc}"`);
+      if (sc) {
+        // Per-subject unplaced session (from greedy solver)
+        if (fix.includes('teacher') && !seen.has(`up_t_${sc}`)) {
+          seen.add(`up_t_${sc}`);
+          teachers.push({ name: `Extra Teacher (${sc})`, subjects: [sc] });
+          log.push(`✔ Added teacher for unplaced "${sc}" session`);
+        } else if (fix.includes('room') && !seen.has('up_room')) {
+          seen.add('up_room');
+          rooms.push({ name: `Room ${rooms.length + 1}`, capacity: 40 });
+          log.push('✔ Added room for unplaced session');
+        } else if (!seen.has(`up_ppw_${sc}`) && !seen.has('reduce_ppw')) {
+          seen.add(`up_ppw_${sc}`);
+          subjects = subjects.map((s: any) =>
+            s.code === sc
+              ? { ...s, periods_per_week: Math.max(1, (parseInt(s.periods_per_week) || 3) - 1) }
+              : s,
+          );
+          log.push(`✔ Reduced periods/week for "${sc}"`);
+        }
+      } else {
+        // Bulk unplaced sessions from CP-SAT — add an extra room + reduce all periods
+        if (!seen.has('up_bulk_room')) {
+          seen.add('up_bulk_room');
+          rooms.push({ name: `Room ${rooms.length + 1}`, capacity: 40 });
+          log.push('✔ Added extra room to help place unscheduled sessions');
+        }
+        if (!seen.has('reduce_ppw') && !seen.has('up_bulk_ppw')) {
+          seen.add('up_bulk_ppw');
+          subjects = subjects.map((s: any) => ({
+            ...s,
+            periods_per_week: Math.max(1, (parseInt(s.periods_per_week) || 3) - 1),
+          }));
+          log.push('✔ Reduced periods/week by 1 for all subjects to ease scheduling');
+        }
       }
     }
   }
@@ -361,6 +387,7 @@ const Step7Rules: React.FC = () => {
           : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
       periods_per_day: periodsPerDay,
       period_duration_minutes: Math.max(15, parseInt(td.periodDuration) || 45),
+      lunch_duration_minutes: td.haslunch ? Math.max(5, parseInt(td.lunchDuration) || 30) : 0,
       start_time: td.startTime || '08:00',
       constraints: {
         max_consecutive_periods: Math.max(1, parseInt(constraints.max_consecutive_periods) || 3),
@@ -434,29 +461,60 @@ const Step7Rules: React.FC = () => {
       const warnings: SolverWarning[] = timetableData.warnings || [];
       setSolverWarnings(warnings);
 
+      const hasAssignments = (timetableData.assignments?.length ?? 0) > 0;
+
       if (warnings.length > 0) {
-        const result = computeAllFixes(warnings, {
-          teachers: teachersData || [],
-          rooms: roomsData || [],
-          subjects: subjectsData || [],
-          timeData: timeData || {},
-        });
-        setAiSolveLog(result.log);
-        setShowResolveModal(true);
+        const isRetry = Object.keys(overrides).length > 0;
+        if (!isRetry) {
+          // First run only — offer autofix modal
+          const result = computeAllFixes(warnings, {
+            teachers: teachersData || [],
+            rooms: roomsData || [],
+            subjects: subjectsData || [],
+            timeData: timeData || {},
+          });
+          if (result.log.length > 0) {
+            setAiSolveLog(result.log);
+            setShowResolveModal(true);
+          }
+        } else {
+          // After autofix retry — navigate with whatever was generated
+          await new Promise((r) => setTimeout(r, 700));
+          if (
+            hasAssignments &&
+            pendingRenameRef.current &&
+            (pendingRenameRef.current.teachers.length > 0 || pendingRenameRef.current.rooms.length > 0)
+          ) {
+            setNewTeacherNames(pendingRenameRef.current.teachers);
+            setNewRoomNames(pendingRenameRef.current.rooms);
+            pendingRenameRef.current = null;
+            setIsGenerating(false);
+            setShowRenameModal(true);
+          } else if (hasAssignments) {
+            pendingRenameRef.current = null;
+            setIsGenerating(false);
+            navigate('/timetable');
+            return;
+          }
+        }
       } else {
-        // No warnings — check if a rename prompt is pending
+        // No warnings — check if a rename prompt is pending and generation succeeded
         await new Promise((r) => setTimeout(r, 700));
         if (
+          hasAssignments &&
           pendingRenameRef.current &&
           (pendingRenameRef.current.teachers.length > 0 || pendingRenameRef.current.rooms.length > 0)
         ) {
           setNewTeacherNames(pendingRenameRef.current.teachers);
           setNewRoomNames(pendingRenameRef.current.rooms);
           pendingRenameRef.current = null;
+          setIsGenerating(false);
           setShowRenameModal(true);
         } else {
           pendingRenameRef.current = null;
+          setIsGenerating(false);
           navigate('/timetable');
+          return;
         }
       }
 

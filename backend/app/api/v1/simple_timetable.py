@@ -61,6 +61,7 @@ class SimpleTimetableRequest(BaseModel):
     working_days: List[str] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
     periods_per_day: int = Field(default=7, ge=1, le=15)
     period_duration_minutes: int = Field(default=45, ge=15, le=180)
+    lunch_duration_minutes: int = Field(default=0, ge=0, le=120)
     start_time: str = "08:00"
     constraints: ConstraintsIn = Field(default_factory=ConstraintsIn)
     soft_constraints: List[SoftConstraintIn] = []
@@ -106,6 +107,7 @@ async def generate_simple_timetable(
         "working_days": request.working_days,
         "periods_per_day": request.periods_per_day,
         "period_duration_minutes": request.period_duration_minutes,
+        "lunch_duration_minutes": request.lunch_duration_minutes,
         "start_time": request.start_time,
         "constraints": request.constraints.model_dump(),
         "soft_constraints": [sc.model_dump() for sc in request.soft_constraints],
