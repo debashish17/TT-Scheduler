@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { WizardShell } from '../WizardShell';
 import { useWizardStore } from '../wizardStore';
@@ -10,6 +10,113 @@ import { simpleTimetableAPI, snapshotsAPI } from '../../../api/client';
 interface PreflightCheck {
   level: 'error' | 'warning';
   message: string;
+}
+
+interface SolverWarning {
+  level: 'error' | 'warning' | 'info';
+  code: string;
+  message: string;
+  detail?: Record<string, any>;
+}
+
+interface CollegeFixState {
+  faculty: any[];
+  rooms: any[];
+  courseOfferings: any[];
+}
+
+// ─── College autofix ─────────────────────────────────────────────────────────
+function computeCollegeFixes(
+  warnings: SolverWarning[],
+  initial: CollegeFixState,
+): { faculty: any[]; rooms: any[]; courseOfferings: any[]; log: string[] } {
+  let faculty = [...(initial.faculty || [])];
+  let rooms = [...(initial.rooms || [])];
+  let courseOfferings = [...(initial.courseOfferings || [])];
+  const log: string[] = [];
+  const seen = new Set<string>();
+
+  for (const w of warnings) {
+    const d = w.detail || {};
+
+    if (w.code === 'NO_QUALIFIED_FACULTY') {
+      const courseCode = d.course_code as string;
+      const k = `add_fac_${courseCode}`;
+      if (!seen.has(k)) {
+        seen.add(k);
+        let count = 1;
+        while (faculty.some(f => f.code === `${courseCode}_FAC_${count}`)) count++;
+        faculty.push({
+          code: `${courseCode}_FAC_${count}`,
+          name: `${courseCode} Faculty ${count}`,
+          department: '',
+          courses_can_teach: [courseCode],
+          max_hours_per_week: 20,
+        });
+        log.push(`✔ Added faculty for course "${courseCode}"`);
+      }
+    }
+
+    if (w.code === 'NO_LECTURE_ROOM_FOR_COURSE') {
+      const courseCode = d.course_code as string;
+      const requiredType = (d.required_type as string) || 'classroom';
+      const minSize = (d.min_section_size as number) || 30;
+      const k = `add_lect_room_${courseCode}`;
+      if (!seen.has(k)) {
+        seen.add(k);
+        rooms.push({
+          name: `${requiredType.charAt(0).toUpperCase() + requiredType.slice(1)} ${rooms.length + 1}`,
+          capacity: minSize,
+          room_type: requiredType,
+        });
+        log.push(`✔ Added ${requiredType} (cap ${minSize}) for course "${courseCode}"`);
+      }
+    }
+
+    if (w.code === 'NO_LAB_ROOM_FOR_COURSE') {
+      const courseCode = d.course_code as string;
+      const labType = (d.required_lab_type as string) || 'lab';
+      const k = `add_lab_${labType}_${courseCode}`;
+      if (!seen.has(k)) {
+        seen.add(k);
+        rooms.push({
+          name: `${labType.charAt(0).toUpperCase() + labType.slice(1)} ${rooms.length + 1}`,
+          capacity: 30,
+          room_type: labType,
+        });
+        log.push(`✔ Added ${labType} room for course "${courseCode}"`);
+      }
+    }
+
+    if (w.code === 'NO_LAB_ROOM_CAPACITY') {
+      const courseCode = d.course_code as string;
+      const labType = (d.required_lab_type as string) || 'lab';
+      const minSize = (d.min_section_size as number) || 30;
+      const k = `add_lab_cap_${courseCode}`;
+      if (!seen.has(k)) {
+        seen.add(k);
+        rooms.push({
+          name: `${labType.charAt(0).toUpperCase() + labType.slice(1)} ${rooms.length + 1}`,
+          capacity: minSize,
+          room_type: labType,
+        });
+        log.push(`✔ Added larger ${labType} (cap ${minSize}) for course "${courseCode}"`);
+      }
+    }
+
+    if (w.code === 'SCHEDULE_OVERSUBSCRIBED' && !seen.has('reduce_lpw')) {
+      seen.add('reduce_lpw');
+      courseOfferings = courseOfferings.map((c: any) => ({
+        ...c,
+        lectures_per_week: Math.max(1, (c.lectures_per_week ?? 3) - 1),
+      }));
+      log.push('✔ Reduced lectures/week by 1 for all courses');
+    }
+
+    // DEPT_COURSE_MISMATCH and MINIMUM_LOAD_INFEASIBLE are intentionally skipped
+  }
+
+  return { faculty, rooms, courseOfferings, log };
 }
 
 // ─── Solving overlay ──────────────────────────────────────────────────────────
@@ -99,6 +206,7 @@ const CollegeStep7Generate: React.FC = () => {
     collegeInstitution, courseOfferings, collegeFaculty, collegeRooms,
     collegeSchedule, collegeConstraints, softConstraintsCollege,
     setGeneratedTimetable, setTimetableError,
+    setCourseOfferings, setCollegeFaculty, setCollegeRooms,
   } = useOnboardingStore();
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -106,6 +214,15 @@ const CollegeStep7Generate: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [solverWarnings, setSolverWarnings] = useState<any[]>([]);
   const [showSolverWarnings, setShowSolverWarnings] = useState(false);
+
+  // ─── Autofix state ────────────────────────────────────────────────────────
+  const [showResolveModal, setShowResolveModal] = useState(false);
+  const [aiSolveLog, setAiSolveLog] = useState<string[]>([]);
+  const [isAiSolving, setIsAiSolving] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [newFacultyNames, setNewFacultyNames] = useState<{ original: string; current: string }[]>([]);
+  const [newRoomNames, setNewRoomNames] = useState<{ original: string; current: string }[]>([]);
+  const pendingRenameRef = useRef<{ faculty: { original: string; current: string }[]; rooms: { original: string; current: string }[] } | null>(null);
 
   // ─── Pre-flight checks (computed on render) ──────────────────────────────
   const computePreflightChecks = (): PreflightCheck[] => {
@@ -187,7 +304,7 @@ const CollegeStep7Generate: React.FC = () => {
   const hasErrors = preflight.some(w => w.level === 'error');
 
   // ─── Build college request ────────────────────────────────────────────────
-  const buildCollegeRequest = () => {
+  const buildCollegeRequest = (overrides: { faculty?: any[]; rooms?: any[]; courseOfferings?: any[] } = {}) => {
     const schedule = collegeSchedule ?? {
       workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
       periodsPerDay: 7,
@@ -203,7 +320,7 @@ const CollegeStep7Generate: React.FC = () => {
       institution_name: institution.name,
       semester: institution.semester,
       departments: institution.departments,
-      course_offerings: courseOfferings.map(c => ({
+      course_offerings: (overrides.courseOfferings ?? courseOfferings).map(c => ({
         code: c.code,
         name: c.name,
         department: c.department,
@@ -219,14 +336,14 @@ const CollegeStep7Generate: React.FC = () => {
           .filter(f => f.courses_can_teach.includes(c.code))
           .map(f => f.code),
       })),
-      faculty: collegeFaculty.map(f => ({
+      faculty: (overrides.faculty ?? collegeFaculty).map(f => ({
         code: f.code,
         name: f.name,
         department: f.department,
         courses_can_teach: f.courses_can_teach,
         max_hours_per_week: f.max_hours_per_week,
       })),
-      rooms: collegeRooms.map(r => ({
+      rooms: (overrides.rooms ?? collegeRooms).map(r => ({
         name: r.name,
         capacity: r.capacity,
         room_type: r.room_type,
@@ -249,16 +366,59 @@ const CollegeStep7Generate: React.FC = () => {
     };
   };
 
+  // ─── Autofix handler ──────────────────────────────────────────────────────
+  const handleCollegeAiSolve = async () => {
+    setIsAiSolving(true);
+    try {
+      const result = computeCollegeFixes(solverWarnings, {
+        faculty: collegeFaculty || [],
+        rooms: collegeRooms || [],
+        courseOfferings: courseOfferings || [],
+      });
+
+      setAiSolveLog(result.log);
+      await new Promise((r) => setTimeout(r, 900));
+
+      const origFacultyCodes = new Set((collegeFaculty || []).map((f: any) => f.code));
+      const origRoomNames = new Set((collegeRooms || []).map((r: any) => r.name));
+      const newFaculty = result.faculty
+        .filter((f: any) => !origFacultyCodes.has(f.code))
+        .map((f: any) => ({ original: f.name, current: f.name }));
+      const newRooms = result.rooms
+        .filter((r: any) => !origRoomNames.has(r.name))
+        .map((r: any) => ({ original: r.name, current: r.name }));
+
+      if (newFaculty.length > 0 || newRooms.length > 0) {
+        pendingRenameRef.current = { faculty: newFaculty, rooms: newRooms };
+      }
+
+      setCollegeFaculty(result.faculty);
+      setCollegeRooms(result.rooms);
+      setCourseOfferings(result.courseOfferings);
+
+      setShowResolveModal(false);
+
+      await runGenerate({
+        faculty: result.faculty,
+        rooms: result.rooms,
+        courseOfferings: result.courseOfferings,
+      });
+    } finally {
+      setIsAiSolving(false);
+    }
+  };
+
   // ─── Generate handler ─────────────────────────────────────────────────────
-  const handleGenerate = async () => {
+  const runGenerate = async (overrides: { faculty?: any[]; rooms?: any[]; courseOfferings?: any[] } = {}) => {
     setIsGenerating(true);
     setError(null);
     setSolverWarnings([]);
     setSolveProgress(0);
     setShowSolverWarnings(false);
+    setAiSolveLog([]);
 
     try {
-      const request = buildCollegeRequest();
+      const request = buildCollegeRequest(overrides);
 
       console.log('📤 College timetable request:', JSON.stringify(request, null, 2));
 
@@ -277,11 +437,33 @@ const CollegeStep7Generate: React.FC = () => {
       const timetableData = response.data;
       setGeneratedTimetable(timetableData);
 
-      const warnings: any[] = timetableData.warnings || [];
+      const warnings: SolverWarning[] = timetableData.warnings || [];
       setSolverWarnings(warnings);
 
       if (warnings.length > 0) {
-        setShowSolverWarnings(true);
+        const result = computeCollegeFixes(warnings, {
+          faculty: overrides.faculty ?? collegeFaculty ?? [],
+          rooms: overrides.rooms ?? collegeRooms ?? [],
+          courseOfferings: overrides.courseOfferings ?? courseOfferings ?? [],
+        });
+        setAiSolveLog(result.log);
+        setShowResolveModal(true);
+      } else {
+        const hasAssignments = (timetableData.assignments?.length ?? 0) > 0;
+        await new Promise((r) => setTimeout(r, 700));
+        if (
+          hasAssignments &&
+          pendingRenameRef.current &&
+          (pendingRenameRef.current.faculty.length > 0 || pendingRenameRef.current.rooms.length > 0)
+        ) {
+          setNewFacultyNames(pendingRenameRef.current.faculty);
+          setNewRoomNames(pendingRenameRef.current.rooms);
+          pendingRenameRef.current = null;
+          setShowRenameModal(true);
+        } else {
+          pendingRenameRef.current = null;
+          navigate('/timetable');
+        }
       }
 
       // Auto-save (non-blocking)
@@ -320,9 +502,6 @@ const CollegeStep7Generate: React.FC = () => {
         }
       }
 
-      // Navigate after short delay (gives time to see solve overlay complete)
-      await new Promise((r) => setTimeout(r, 700));
-      navigate('/timetable');
     } catch (err: any) {
       let msg: string;
       if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
@@ -343,6 +522,25 @@ const CollegeStep7Generate: React.FC = () => {
       setIsGenerating(false);
       setSolveProgress(0);
     }
+  };
+
+  const handleGenerate = async () => {
+    await runGenerate();
+  };
+
+  const handleRenameConfirm = () => {
+    const updatedFaculty = (collegeFaculty || []).map((f: any) => {
+      const match = newFacultyNames.find(x => x.original === f.name);
+      return match ? { ...f, name: match.current, code: match.current.replace(/\s+/g, '_').toUpperCase() } : f;
+    });
+    const updatedRooms = (collegeRooms || []).map((r: any) => {
+      const match = newRoomNames.find(x => x.original === r.name);
+      return match ? { ...r, name: match.current } : r;
+    });
+    setCollegeFaculty(updatedFaculty);
+    setCollegeRooms(updatedRooms);
+    setShowRenameModal(false);
+    navigate('/timetable');
   };
 
   // ─── Room type summary ────────────────────────────────────────────────────
@@ -478,6 +676,216 @@ const CollegeStep7Generate: React.FC = () => {
       </WizardShell>
 
       {isGenerating && <SolvingOverlay progress={solveProgress} />}
+
+      {/* Auto Resolve Modal */}
+      {showResolveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 backdrop-blur-sm"
+            style={{ background: 'rgba(0,0,0,0.35)' }}
+            onClick={() => { if (!isAiSolving) setShowResolveModal(false); }}
+          />
+          <div
+            className="relative w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden rounded-2xl edge"
+            style={{ background: 'var(--paper)' }}
+          >
+            <div
+              className="flex items-center justify-between px-6 pt-5 pb-4"
+              style={{ borderBottom: '1px solid var(--line)' }}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: 'var(--brand-soft)' }}
+                >
+                  <Icon name="sparkle" size={16} style={{ color: 'var(--brand)' } as any} />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-[15px]" style={{ color: 'var(--ink)' }}>Auto Resolve</h2>
+                  <Eyebrow>{aiSolveLog.length} fix{aiSolveLog.length !== 1 ? 'es' : ''} proposed</Eyebrow>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowResolveModal(false)}
+                disabled={isAiSolving}
+                className="w-7 h-7 flex items-center justify-center rounded-full transition-colors disabled:opacity-40"
+                style={{ color: 'var(--ink-3)' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--paper-2)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <Icon name="x" size={14} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+              <p className="text-sm" style={{ color: 'var(--ink-3)' }}>
+                These fixes resolve constraint conflicts so CP-SAT can schedule all sessions. Review and apply.
+              </p>
+              {aiSolveLog.length === 0 ? (
+                <div className="py-8 text-center text-sm" style={{ color: 'var(--ink-3)' }}>
+                  No automatic fixes identified.
+                </div>
+              ) : (
+                <div className="edge rounded-xl overflow-hidden" style={{ background: 'var(--paper)' }}>
+                  {aiSolveLog.map((line, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-3 px-4 py-3 text-sm"
+                      style={{ borderTop: i > 0 ? '1px solid var(--line)' : undefined, color: 'var(--ink-2)' }}
+                    >
+                      <div
+                        className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                        style={{ background: 'var(--brand-soft)' }}
+                      >
+                        <Icon name="check" size={11} style={{ color: 'var(--brand)' } as any} />
+                      </div>
+                      <span>{line.replace('✔', '').trim()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 flex gap-3" style={{ borderTop: '1px solid var(--line)' }}>
+              <Btn
+                variant="ghost"
+                size="md"
+                onClick={() => setShowResolveModal(false)}
+                disabled={isAiSolving}
+                className="flex-1 justify-center"
+              >
+                Cancel
+              </Btn>
+              <Btn
+                variant="brand"
+                size="md"
+                onClick={handleCollegeAiSolve}
+                disabled={aiSolveLog.length === 0 || isAiSolving}
+                className="flex-1 justify-center"
+              >
+                {isAiSolving ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Applying…
+                  </>
+                ) : (
+                  <><Icon name="spark" size={14} /> Accept &amp; Apply All</>
+                )}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename New Resources Modal */}
+      {showRenameModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.38)' }} />
+          <div
+            className="relative w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden rounded-2xl edge"
+            style={{ background: 'var(--paper)' }}
+          >
+            <div className="flex items-center gap-3 px-6 pt-5 pb-4" style={{ borderBottom: '1px solid var(--line)' }}>
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                style={{ background: 'var(--brand-soft)' }}
+              >
+                <Icon name="spark" size={16} style={{ color: 'var(--brand)' } as any} />
+              </div>
+              <div>
+                <h2 className="font-semibold text-[15px]">Rename New Resources</h2>
+                <Eyebrow>Auto-added during conflict resolution</Eyebrow>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              <p className="text-sm" style={{ color: 'var(--ink-3)' }}>
+                These faculty and rooms were created automatically. You can rename them before viewing your timetable.
+              </p>
+
+              {newFacultyNames.length > 0 && (
+                <div>
+                  <Eyebrow className="block mb-3">New faculty</Eyebrow>
+                  <div className="space-y-2">
+                    {newFacultyNames.map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div
+                          className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                          style={{ background: 'var(--paper-2)', color: 'var(--ink-3)' }}
+                        >
+                          <span className="text-[10px] mono">{i + 1}</span>
+                        </div>
+                        <input
+                          value={item.current}
+                          onChange={e =>
+                            setNewFacultyNames(prev =>
+                              prev.map((x, j) => j === i ? { ...x, current: e.target.value } : x)
+                            )
+                          }
+                          className="flex-1 px-3 py-2 rounded-lg text-sm outline-none"
+                          style={{ background: 'var(--paper)', border: '1px solid var(--ink)', color: 'var(--ink)' }}
+                          placeholder={item.original}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {newRoomNames.length > 0 && (
+                <div>
+                  <Eyebrow className="block mb-3">New rooms</Eyebrow>
+                  <div className="space-y-2">
+                    {newRoomNames.map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div
+                          className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                          style={{ background: 'var(--paper-2)', color: 'var(--ink-3)' }}
+                        >
+                          <span className="text-[10px] mono">{i + 1}</span>
+                        </div>
+                        <input
+                          value={item.current}
+                          onChange={e =>
+                            setNewRoomNames(prev =>
+                              prev.map((x, j) => j === i ? { ...x, current: e.target.value } : x)
+                            )
+                          }
+                          className="flex-1 px-3 py-2 rounded-lg text-sm outline-none"
+                          style={{ background: 'var(--paper)', border: '1px solid var(--ink)', color: 'var(--ink)' }}
+                          placeholder={item.original}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 flex gap-3" style={{ borderTop: '1px solid var(--line)' }}>
+              <Btn
+                variant="ghost"
+                size="md"
+                onClick={() => { setShowRenameModal(false); navigate('/timetable'); }}
+                className="flex-1 justify-center"
+              >
+                Skip
+              </Btn>
+              <Btn
+                variant="brand"
+                size="md"
+                onClick={handleRenameConfirm}
+                className="flex-1 justify-center"
+              >
+                Save &amp; View Timetable
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
