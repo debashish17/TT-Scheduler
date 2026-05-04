@@ -685,7 +685,7 @@ A: Not currently — each account is independent. Sharing a timetable requires e
 <div align="center">
 
 **TT-Scheduler** — Conflict-free timetables in seconds.
-Built with and Google OR-Tools CP-SAT.
+Built with Google OR-Tools CP-SAT.
 
 [ Live App](https://tt-scheduler.vercel.app) &nbsp;•&nbsp; [ API Docs](https://tt-scheduler.onrender.com/api/v1/docs)
 
