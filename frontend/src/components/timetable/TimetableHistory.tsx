@@ -49,11 +49,12 @@ const TimetableHistory: React.FC = () => {
     clearOnboardingData,
   } = useOnboardingStore();
 
-  const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [error,     setError]     = useState<string | null>(null);
+  const [snapshots,    setSnapshots]   = useState<SnapshotSummary[]>([]);
+  const [loading,      setLoading]     = useState(true);
+  const [loadingId,    setLoadingId]   = useState<string | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [deletingId,   setDeletingId]  = useState<string | null>(null);
+  const [error,        setError]       = useState<string | null>(null);
 
   const fetchHistory = () => {
     setLoading(true); setError(null);
@@ -83,6 +84,26 @@ const TimetableHistory: React.FC = () => {
       navigate('/timetable');
     } catch { toast.error('Failed to load snapshot.');
     } finally { setLoadingId(null); }
+  };
+
+  const handleDuplicate = async (id: string) => {
+    setDuplicatingId(id);
+    try {
+      const res = await snapshotsAPI.getById(id);
+      if (!res.data.found) { toast.error('Snapshot not found.'); return; }
+      const snap = res.data.snapshot;
+      setInstitutionData(snap.institution_data  || null);
+      setClassesData(    snap.classes_data       || []);
+      setSubjectsData(   snap.subjects_data      || []);
+      setTeachersData(   snap.teachers_data      || []);
+      setTimeData(       snap.time_data          || null);
+      setRoomsData(      snap.rooms_data         || []);
+      setConstraintsData(snap.constraints_data   || null);
+      // Do not restore the generated timetable so the user can re-run the solver
+      toast.success(`Duplicated "${snap.institution_name}" — adjust and re-generate`);
+      navigate('/wizard/step/1');
+    } catch { toast.error('Failed to duplicate snapshot.');
+    } finally { setDuplicatingId(null); }
   };
 
   const handleDelete = async (id: string) => {
@@ -208,6 +229,14 @@ const TimetableHistory: React.FC = () => {
                       onClick={() => handleLoad(snap.id)}
                     >
                       {loadingId === snap.id ? 'Loading…' : 'Load'}
+                    </Btn>
+                    <Btn
+                      variant="soft"
+                      size="sm"
+                      disabled={duplicatingId === snap.id}
+                      onClick={() => handleDuplicate(snap.id)}
+                    >
+                      {duplicatingId === snap.id ? 'Duplicating…' : 'Duplicate'}
                     </Btn>
                     <Btn variant="ghost" size="sm" onClick={() => navigate('/analytics')}>
                       Analytics

@@ -6,6 +6,8 @@ import { snapshotsAPI } from '../../api/client';
 import toast from 'react-hot-toast';
 import { exportAllViewsToExcel, exportSelectedPDFs } from '../../utils/exportHelpers';
 import ExportModal from '../timetable/ExportModal';
+import ImportExcelModal from './ImportExcelModal';
+import AIDraftModal from './AIDraftModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SnapshotSummary {
@@ -149,6 +151,8 @@ const DashboardPage: React.FC = () => {
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [aiDraftOpen, setAiDraftOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -227,7 +231,7 @@ const DashboardPage: React.FC = () => {
         crumbs={[inst, dept]}
         actions={
           <>
-            <Btn variant="ghost" size="sm">
+            <Btn variant="ghost" size="sm" onClick={() => setImportModalOpen(true)}>
               <Icon name="import" size={13} /> Import Excel
             </Btn>
             <Btn variant="primary" size="sm" onClick={() => navigate('/wizard')}>
@@ -308,9 +312,9 @@ const DashboardPage: React.FC = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               { icon: 'plus',    title: 'New timetable',   sub: 'Start from scratch',       onClick: () => navigate('/wizard') },
-              { icon: 'import',  title: 'Import Excel',    sub: 'Roster + rooms',            onClick: () => {} },
-              { icon: 'stack',   title: 'Duplicate a run', sub: 'Tweak and resolve',         onClick: () => {} },
-              { icon: 'sparkle', title: 'AI draft',        sub: 'Describe in plain English', onClick: () => {} },
+              { icon: 'import',  title: 'Import Excel',    sub: 'Roster + rooms',            onClick: () => setImportModalOpen(true) },
+              { icon: 'stack',   title: 'Duplicate a run', sub: 'Tweak and resolve',         onClick: () => navigate('/history') },
+              { icon: 'sparkle', title: 'AI draft',        sub: 'Describe in plain English', onClick: () => setAiDraftOpen(true) },
             ].map(a => (
               <button
                 key={a.title}
@@ -425,6 +429,8 @@ const DashboardPage: React.FC = () => {
         </div>
       </div>
       <ExportModal isOpen={isPdfModalOpen} onClose={() => setIsPdfModalOpen(false)} onExport={handleExportPdf} />
+      <ImportExcelModal open={importModalOpen} onClose={() => setImportModalOpen(false)} />
+      <AIDraftModal open={aiDraftOpen} onClose={() => setAiDraftOpen(false)} />
     </div>
   );
 };

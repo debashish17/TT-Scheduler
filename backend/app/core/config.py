@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     # Frontend URL for email links
     FRONTEND_URL: str = "http://localhost:5173"
 
+    # AI / OpenAI (optional — required only for the AI Draft feature)
+    OPENAI_API_KEY: Optional[str] = None
+
     # Database connection pool settings
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20

@@ -21,6 +21,7 @@ from app.api.v1 import (
     issues,
     simple_timetable,
     snapshots,
+    ai_draft,
 )
 
 # Configure logging so all modules (especially simple_solver) print to console
@@ -124,6 +125,7 @@ app.include_router(requests.router, prefix=f"{settings.API_V1_STR}/requests", ta
 app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", tags=["Analytics"])
 app.include_router(issues.router, prefix=f"{settings.API_V1_STR}/issues", tags=["Issue Reports"])
 app.include_router(simple_timetable.router, prefix=f"{settings.API_V1_STR}/timetable", tags=["Simple Timetable"])
+app.include_router(ai_draft.router,         prefix=f"{settings.API_V1_STR}/timetable", tags=["AI Draft"])
 app.include_router(snapshots.router,         prefix=f"{settings.API_V1_STR}/snapshots",  tags=["Snapshots"])
 
 
