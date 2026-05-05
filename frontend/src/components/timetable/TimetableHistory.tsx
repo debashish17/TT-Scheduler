@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { snapshotsAPI } from '../../api/client';
 import { useOnboardingStore } from '../../store';
+import { useWizardStore } from '../wizard/wizardStore';
 import { Btn, Chip, Dot, Icon, TopBar } from '../ui/primitives';
 import toast from 'react-hot-toast';
 
@@ -47,6 +48,8 @@ const TimetableHistory: React.FC = () => {
     setInstitutionData, setClassesData, setSubjectsData, setTeachersData,
     setTimeData, setRoomsData, setConstraintsData, setGeneratedTimetable,
     clearOnboardingData,
+    setCollegeInstitution, setCourseOfferings, setCollegeFaculty,
+    setCollegeSchedule, setCollegeRooms, setCollegeConstraints,
   } = useOnboardingStore();
 
   const [snapshots,    setSnapshots]   = useState<SnapshotSummary[]>([]);
@@ -92,6 +95,14 @@ const TimetableHistory: React.FC = () => {
       const res = await snapshotsAPI.getById(id);
       if (!res.data.found) { toast.error('Snapshot not found.'); return; }
       const snap = res.data.snapshot;
+      // Determine workflow from snapshot before hydrating, so we set the right fields
+      const snapshotWorkflow: 'school' | 'college' =
+        snap.institution_data?.workflow ||
+        (['college', 'university', 'engineering institute', 'management institute']
+          .some(k => (snap.institution_data?.type ?? '').toLowerCase().includes(k))
+          ? 'college' : 'school');
+
+      // Always set the generic fields (used by school steps + snapshot restore)
       setInstitutionData(snap.institution_data  || null);
       setClassesData(    snap.classes_data       || []);
       setSubjectsData(   snap.subjects_data      || []);
@@ -99,7 +110,19 @@ const TimetableHistory: React.FC = () => {
       setTimeData(       snap.time_data          || null);
       setRoomsData(      snap.rooms_data         || []);
       setConstraintsData(snap.constraints_data   || null);
-      // Do not restore the generated timetable so the user can re-run the solver
+
+      // College steps read from separate store fields — populate them for college runs
+      if (snapshotWorkflow === 'college') {
+        setCollegeInstitution(snap.institution_data  || null);
+        setCourseOfferings(   snap.subjects_data      || []);
+        setCollegeFaculty(    snap.teachers_data      || []);
+        setCollegeSchedule(   snap.time_data          || null);
+        setCollegeRooms(      snap.rooms_data         || []);
+        setCollegeConstraints(snap.constraints_data   || null);
+      }
+
+      // Do not restore the generated timetable — user is duplicating to re-run
+      useWizardStore.getState().setWorkflow(snapshotWorkflow);
       toast.success(`Duplicated "${snap.institution_name}" — adjust and re-generate`);
       navigate('/wizard/step/1');
     } catch { toast.error('Failed to duplicate snapshot.');

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
+import { useWizardStore } from '../wizard/wizardStore';
 import { Btn, Icon } from '../ui/primitives';
 import { apiClient } from '../../api/client';
 import toast from 'react-hot-toast';
@@ -22,8 +23,11 @@ const AIDraftModal: React.FC<AIDraftModalProps> = ({ open, onClose }) => {
   const [loading, setLoading] = useState(false);
 
   const {
+    clearOnboardingData,
     setInstitutionData, setClassesData, setSubjectsData,
     setTeachersData, setTimeData, setRoomsData, setConstraintsData,
+    setCollegeInstitution, setCourseOfferings, setCollegeFaculty,
+    setCollegeRooms, setCollegeSchedule, setCollegeConstraints,
   } = useOnboardingStore();
 
   const handleDraft = async () => {
@@ -39,25 +43,39 @@ const AIDraftModal: React.FC<AIDraftModalProps> = ({ open, onClose }) => {
         { description: description.trim() },
         { timeout: 60000 },
       );
-      const {
-        institution_data, classes_data, subjects_data,
-        teachers_data, time_data, rooms_data, constraints_data,
-      } = res.data;
+      const data = res.data;
+      const { institution_data } = data;
+      const isCollege = institution_data?.type === 'college';
 
-      if (institution_data)  setInstitutionData(institution_data);
-      if (classes_data)      setClassesData(classes_data);
-      if (subjects_data)     setSubjectsData(subjects_data);
-      if (teachers_data)     setTeachersData(teachers_data);
-      if (time_data)         setTimeData(time_data);
-      if (rooms_data)        setRoomsData(rooms_data);
-      if (constraints_data)  setConstraintsData(constraints_data);
+      // Wipe all stale wizard state before applying the new draft so old
+      // college/school data from a previous run doesn't bleed through.
+      clearOnboardingData();
+      useWizardStore.getState().setWorkflow(isCollege ? 'college' : 'school');
+
+      setInstitutionData(institution_data);
+
+      if (isCollege) {
+        if (data.college_institution)  setCollegeInstitution(data.college_institution);
+        if (data.course_offerings)     setCourseOfferings(data.course_offerings);
+        if (data.college_faculty)      setCollegeFaculty(data.college_faculty);
+        if (data.college_rooms)        setCollegeRooms(data.college_rooms);
+        if (data.college_schedule)     setCollegeSchedule(data.college_schedule);
+        if (data.college_constraints)  setCollegeConstraints(data.college_constraints);
+      } else {
+        if (data.classes_data)      setClassesData(data.classes_data);
+        if (data.subjects_data)     setSubjectsData(data.subjects_data);
+        if (data.teachers_data)     setTeachersData(data.teachers_data);
+        if (data.time_data)         setTimeData(data.time_data);
+        if (data.rooms_data)        setRoomsData(data.rooms_data);
+        if (data.constraints_data)  setConstraintsData(data.constraints_data);
+      }
 
       toast.success('Draft ready — review and adjust in the wizard', { id: tid });
       onClose();
       navigate('/wizard/step/1');
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      toast.error(detail || 'AI draft failed. Make sure OPENAI_API_KEY is set in the backend.', { id: tid });
+      toast.error(detail || 'AI draft failed. Please try again.', { id: tid });
     } finally {
       setLoading(false);
     }
@@ -160,7 +178,7 @@ const AIDraftModal: React.FC<AIDraftModalProps> = ({ open, onClose }) => {
         </div>
 
         <p className="mt-4 text-[11px] mono text-center" style={{ color: 'var(--ink-3)' }}>
-          Requires OPENAI_API_KEY in backend env · Results are fully editable in the wizard
+          Powered by Claude Haiku · Results are fully editable in the wizard
         </p>
       </div>
     </div>
