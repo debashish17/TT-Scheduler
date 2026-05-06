@@ -102,8 +102,6 @@ const AppShell: React.FC<AppShellProps> = ({ children }) => {
             <div className="eyebrow mb-2 px-2" style={{ color: 'var(--ink-3)' }}>Solver</div>
             <div className="px-2 text-[11px] mono space-y-1" style={{ color: 'var(--ink-3)' }}>
               <div className="flex justify-between"><span>Engine</span><span>CP-SAT 9.10</span></div>
-              <div className="flex justify-between"><span>Queue</span><span>0 pending</span></div>
-              <div className="flex justify-between"><span>Avg solve</span><span>3.4s</span></div>
             </div>
           </div>
         </div>

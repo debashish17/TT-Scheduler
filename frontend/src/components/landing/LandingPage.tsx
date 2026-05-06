@@ -461,7 +461,7 @@ const CTA: React.FC<{ workflow: string; onEnter: () => void }> = ({ workflow, on
       </h2>
       <div className="mt-10 flex items-center justify-center gap-3">
         <Btn variant="primary" size="lg" onClick={onEnter}>Open the app <Icon name="arrow" size={14} /></Btn>
-        <Btn variant="ghost" size="lg">Read the docs</Btn>
+        <Btn variant="ghost" size="lg" onClick={() => window.open('/TT-Scheduler_User_Manual.pdf', '_blank')}>Read the docs</Btn>
       </div>
     </section>
   );
@@ -473,7 +473,14 @@ const Footer: React.FC = () => (
     <div className="max-w-[1280px] mx-auto px-8 py-12 grid grid-cols-2 md:grid-cols-5 gap-8 text-sm">
       <div className="col-span-2">
         <div className="flex items-center gap-2 mb-3">
-          <div className="w-6 h-6 rounded" style={{ background: 'var(--ink)' }} />
+          <div className="w-6 h-6 rounded flex items-center justify-center" style={{ background: 'var(--ink)' }}>
+              <div className="grid grid-cols-2 gap-[1.5px]">
+                <div className="w-[3px] h-[3px] rounded-[1px] bg-white" />
+                <div className="w-[3px] h-[3px] rounded-[1px] bg-white opacity-40" />
+                <div className="w-[3px] h-[3px] rounded-[1px] bg-white opacity-40" />
+                <div className="w-[3px] h-[3px] rounded-[1px] bg-white" />
+              </div>
+            </div>
           <span className="font-bold">TT-Scheduler</span>
         </div>
         <p className="text-[13px] max-w-xs" style={{ color: 'var(--ink-3)' }}>
@@ -496,7 +503,7 @@ const Footer: React.FC = () => (
     <div style={{ borderTop: '1px solid var(--line)' }}>
       <div className="max-w-[1280px] mx-auto px-8 py-5 flex items-center justify-between text-xs mono" style={{ color: 'var(--ink-3)' }}>
         <span>© 2026 TT-Scheduler · MIT</span>
-        <span>solver: CP-SAT 9.10 · uptime 99.98%</span>
+        <span>solver: CP-SAT 9.10</span>
       </div>
     </div>
   </footer>

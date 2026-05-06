@@ -43,7 +43,7 @@ const Signup = () => {
     >
       {/* Left panel — brand */}
       <div
-        className="hidden lg:flex flex-col justify-between w-[480px] shrink-0 p-12"
+        className="hidden lg:flex flex-col w-[480px] shrink-0 p-12"
         style={{ background: 'var(--ink)', color: 'var(--paper)' }}
       >
         <div className="flex items-center gap-2.5">
@@ -58,7 +58,7 @@ const Signup = () => {
           <span className="font-bold tracking-tight">TT-Scheduler</span>
         </div>
 
-        <div>
+        <div className="flex-1 flex flex-col justify-center">
           <p className="eyebrow mb-4" style={{ color: 'rgba(255,255,255,0.45)' }}>Get started free</p>
           <h2 className="serif leading-[1] tracking-tight mb-6" style={{ fontSize: 52, color: 'var(--paper)' }}>
             Schedule your<br />
@@ -84,9 +84,6 @@ const Signup = () => {
           </ul>
         </div>
 
-        <p className="text-[11px] mono" style={{ color: 'rgba(255,255,255,0.25)' }}>
-          Free plan · No credit card required
-        </p>
       </div>
 
       {/* Right panel — form */}

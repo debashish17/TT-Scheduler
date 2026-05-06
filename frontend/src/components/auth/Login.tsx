@@ -43,7 +43,7 @@ const Login = () => {
     >
       {/* Left panel — brand */}
       <div
-        className="hidden lg:flex flex-col justify-between w-[480px] shrink-0 p-12"
+        className="hidden lg:flex flex-col w-[480px] shrink-0 p-12"
         style={{ background: 'var(--ink)', color: 'var(--paper)' }}
       >
         {/* Logo */}
@@ -60,7 +60,7 @@ const Login = () => {
         </div>
 
         {/* Mid copy */}
-        <div>
+        <div className="flex-1 flex flex-col justify-center">
           <p className="eyebrow mb-4" style={{ color: 'rgba(255,255,255,0.45)' }}>
             Timetabling, solved
           </p>
@@ -71,20 +71,6 @@ const Login = () => {
           <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
             A CP-SAT constraint solver that builds complete, conflict-free timetables for schools and colleges in seconds.
           </p>
-        </div>
-
-        {/* Bottom stat strip */}
-        <div className="grid grid-cols-3 gap-0" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 24 }}>
-          {[
-            { v: '3.4s', l: 'avg solve' },
-            { v: '0',    l: 'clashes' },
-            { v: '8',    l: 'constraints' },
-          ].map((s, i) => (
-            <div key={s.l} className="pr-4" style={{ borderRight: i < 2 ? '1px solid rgba(255,255,255,0.1)' : undefined, paddingLeft: i > 0 ? 16 : 0 }}>
-              <div className="serif text-3xl" style={{ color: 'var(--paper)' }}>{s.v}</div>
-              <div className="text-[11px] mono mt-1" style={{ color: 'rgba(255,255,255,0.4)' }}>{s.l}</div>
-            </div>
-          ))}
         </div>
       </div>
 

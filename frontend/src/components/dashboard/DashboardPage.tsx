@@ -321,7 +321,6 @@ const DashboardPage: React.FC = () => {
                   <Btn variant="ghost" size="sm" onClick={() => setIsPdfModalOpen(true)} disabled={exportingPdf}>
                     <Icon name="file" size={13} /> {exportingPdf ? 'Exporting…' : 'PDF'}
                   </Btn>
-                  <Btn variant="ghost" size="sm"><Icon name="spark" size={13} /> Compare versions</Btn>
                 </>
               )}
             </div>
@@ -418,46 +417,61 @@ const DashboardPage: React.FC = () => {
                 ) : filtered.length === 0 ? (
                   <EmptyRuns onNew={() => navigate('/wizard')} />
                 ) : (
-                  filtered.map((r, idx) => {
-                    const clashes = 0; // not in runs-list summary
-                    const solve = r.solve_time_seconds != null ? formatSolveTime(r.solve_time_seconds) : '—';
-                    const isLatest = idx === 0 && !q;
-                    return (
-                      <tr
-                        key={r.id}
-                        className="transition-colors"
-                        style={{ borderTop: '1px solid var(--line)' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--paper-2)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        <td className="py-3 px-5">
-                          <div className="font-medium">{displayName(r.name)}</div>
-                          <div className="text-[11px] mono" style={{ color: 'var(--ink-3)' }}>{r.id.slice(0, 8)}</div>
-                        </td>
-                        <td className="py-3 px-5" style={{ color: 'var(--ink-2)' }}>{relativeTime(r.created_at)}</td>
-                        <td className="py-3 px-5">
-                          {isLatest
-                            ? <Chip tone="ok"><Dot color="var(--ok)" /> live</Chip>
-                            : <Chip tone="neutral">archive</Chip>
-                          }
-                        </td>
-                        <td className="py-3 px-5 mono text-[13px]">
-                          <span style={{ color: clashes === 0 ? 'var(--ok)' : 'var(--err)' }}>{clashes}</span>
-                        </td>
-                        <td className="py-3 px-5 mono text-[13px]" style={{ color: 'var(--ink-2)' }}>{solve}</td>
-                        <td className="py-3 px-5 text-right">
-                          <Btn
-                            variant="ghost"
-                            size="sm"
-                            disabled={openingId === r.id}
-                            onClick={() => handleOpenRun(r)}
+                  <>
+                    {filtered.slice(0, 10).map((r, idx) => {
+                      const clashes = 0; // not in runs-list summary
+                      const solve = r.solve_time_seconds != null ? formatSolveTime(r.solve_time_seconds) : '—';
+                      const isLatest = idx === 0 && !q;
+                      return (
+                        <tr
+                          key={r.id}
+                          className="transition-colors"
+                          style={{ borderTop: '1px solid var(--line)' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--paper-2)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <td className="py-3 px-5">
+                            <div className="font-medium">{displayName(r.name)}</div>
+                            <div className="text-[11px] mono" style={{ color: 'var(--ink-3)' }}>{r.id.slice(0, 8)}</div>
+                          </td>
+                          <td className="py-3 px-5" style={{ color: 'var(--ink-2)' }}>{relativeTime(r.created_at)}</td>
+                          <td className="py-3 px-5">
+                            {isLatest
+                              ? <Chip tone="ok"><Dot color="var(--ok)" /> live</Chip>
+                              : <Chip tone="neutral">archive</Chip>
+                            }
+                          </td>
+                          <td className="py-3 px-5 mono text-[13px]">
+                            <span style={{ color: clashes === 0 ? 'var(--ok)' : 'var(--err)' }}>{clashes}</span>
+                          </td>
+                          <td className="py-3 px-5 mono text-[13px]" style={{ color: 'var(--ink-2)' }}>{solve}</td>
+                          <td className="py-3 px-5 text-right">
+                            <Btn
+                              variant="ghost"
+                              size="sm"
+                              disabled={openingId === r.id}
+                              onClick={() => handleOpenRun(r)}
+                            >
+                              {openingId === r.id ? 'Loading…' : <>Open <Icon name="arrow" size={12} /></>}
+                            </Btn>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filtered.length > 10 && (
+                      <tr style={{ borderTop: '1px solid var(--line)' }}>
+                        <td colSpan={6} className="py-3 px-5 text-center text-sm">
+                          <button
+                            onClick={() => navigate('/history')}
+                            className="mono text-[12px] hover:opacity-70 transition-opacity"
+                            style={{ color: 'var(--brand)' }}
                           >
-                            {openingId === r.id ? 'Loading…' : <>Open <Icon name="arrow" size={12} /></>}
-                          </Btn>
+                            View all {filtered.length} runs →
+                          </button>
                         </td>
                       </tr>
-                    );
-                  })
+                    )}
+                  </>
                 )}
               </tbody>
             </table>
