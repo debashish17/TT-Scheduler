@@ -12,11 +12,14 @@ const TimetableRouter: React.FC = () => {
 };
 
 import LandingPage from './components/landing/LandingPage';
+import DocsPage from './components/docs/DocsPage';
 import AppShell from './components/layout/AppShell';
 import DashboardPage from './components/dashboard/DashboardPage';
 
 import Login from './components/auth/Login';
 import Signup from './components/auth/Signup';
+import ForgotPassword from './components/auth/ForgotPassword';
+import ResetPassword from './components/auth/ResetPassword';
 import ProtectedRoute from './components/common/ProtectedRoute';
 
 import WorkflowSelector from './components/wizard/WorkflowSelector';
@@ -37,8 +40,11 @@ function App() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<LandingPage />} />
+        <Route path="/docs" element={<DocsPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Protected */}
         <Route element={<ProtectedRoute />}>

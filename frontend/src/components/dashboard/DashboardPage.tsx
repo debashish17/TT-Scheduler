@@ -2,37 +2,39 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
 import { Btn, Eyebrow, Chip, Dot, Icon, TopBar } from '../ui/primitives';
-import { snapshotsAPI } from '../../api/client';
+import { runsAPI, schoolAPI, collegeAPI } from '../../api/client';
+import { useWizardStore } from '../wizard/wizardStore';
 import toast from 'react-hot-toast';
 import { exportAllViewsToExcel, exportSelectedPDFs } from '../../utils/exportHelpers';
 import ExportModal from '../timetable/ExportModal';
+import ImportExcelModal from './ImportExcelModal';
+import AIDraftModal from './AIDraftModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface SnapshotSummary {
+interface RunSummary {
   id: string;
-  institution_name: string;
+  kind: 'school' | 'college';
+  name: string;
+  status: string;
+  solver: string;
+  solve_time_seconds?: number | null;
+  parent_run_id?: string | null;
   created_at: string;
-  // flat summary fields from getHistory
-  solve_time?: string;
-  total_assignments?: number;
-  subjects_count?: number;
-  teachers_count?: number;
+  // Aggregate counts from backend
+  assignments_count?: number;
+  subjects_count?: number;   // subjects (school) or courses (college)
+  teachers_count?: number;   // teachers (school) or faculty (college)
+  classes_count?: number;    // classes (school) or sections (college)
   rooms_count?: number;
-  // full snapshot fields from getLatest
-  classes_data?: any[];
-  teachers_data?: any[];
-  rooms_data?: any[];
-  generated_timetable?: {
-    stats?: {
-      clashes?: number;
-      solve_time_seconds?: number;
-    };
-    assignments?: any[];
-    working_days?: string[];
-    time_slots?: any[];
-    solver?: string;
-    status?: string;
-  };
+  students_count?: number;   // sum of class sizes (school) or course enrolments (college)
+  // institution_name is derived from the run name
+  institution_name?: string;
+}
+
+/** Strip the trailing " timetable" the backend appends to run names by default. */
+function displayName(name: string | undefined): string {
+  if (!name) return 'Untitled';
+  return name.replace(/\s+timetable\s*$/i, '').trim() || name;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -138,86 +140,114 @@ const EmptyRuns: React.FC<{ onNew: () => void }> = ({ onNew }) => (
 // ─── Dashboard page ───────────────────────────────────────────────────────────
 const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const { institutionData, generatedTimetable } = useOnboardingStore();
+  const { institutionData, generatedTimetable, setInstitutionData, setGeneratedTimetable } = useOnboardingStore();
   const [q, setQ] = useState('');
 
-  const [latest, setLatest] = useState<SnapshotSummary | null>(null);
-  const [history, setHistory] = useState<SnapshotSummary[]>([]);
+  const [latest, setLatest] = useState<RunSummary | null>(null);
+  const [history, setHistory] = useState<RunSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [aiDraftOpen, setAiDraftOpen] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(false);
 
-    Promise.all([
-      snapshotsAPI.getLatest().catch(() => null),
-      snapshotsAPI.getHistory().catch(() => null),
-    ]).then(([latestRes, historyRes]) => {
-      if (cancelled) return;
-      const snap = latestRes?.data;
-      setLatest(snap?.found ? snap.snapshot : null);
-      setHistory(historyRes?.data?.snapshots ?? []);
-      setLoading(false);
-    }).catch(() => {
-      if (!cancelled) { setError(true); setLoading(false); }
-    });
+    runsAPI.list()
+      .then((res) => {
+        if (cancelled) return;
+        const runs: RunSummary[] = (res.data?.runs ?? []) as RunSummary[];
+        setLatest(runs.length > 0 ? runs[0] : null);
+        setHistory(runs);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) { setError(true); setLoading(false); }
+      });
 
     return () => { cancelled = true; };
   }, []);
 
   const filtered = history.filter(r =>
-    (r.institution_name ?? '').toLowerCase().includes(q.toLowerCase())
+    displayName(r.name).toLowerCase().includes(q.toLowerCase())
   );
 
-  const inst = latest?.institution_name || institutionData?.name || 'My Institution';
-  const dept = institutionData?.type || 'College';
+  const inst = displayName(latest?.name) !== 'Untitled'
+    ? displayName(latest?.name)
+    : (institutionData?.name || 'My Institution');
+  const dept = latest?.kind === 'college' ? 'College' : (latest?.kind === 'school' ? 'School' : (institutionData?.type || 'College'));
 
-  const latestClashes = latest?.generated_timetable?.stats?.clashes ?? 0;
-  const latestSolveRaw = latest?.generated_timetable?.stats?.solve_time_seconds
-    ?? (latest?.solve_time != null ? parseFloat(String(latest.solve_time)) : undefined);
-  const latestSolve = formatSolveTime(latestSolveRaw);
+  const latestClashes = 0; // clashes not in runs-list summary; shown per-run after loading
+  const latestSolveRaw = latest?.solve_time_seconds ?? null;
+  const latestSolve = formatSolveTime(latestSolveRaw ?? undefined);
   const latestWhen = latest ? relativeTime(latest.created_at) : null;
 
-  const activeStudentsCount = latest?.classes_data
-    ? latest.classes_data.reduce((sum, c) => sum + (Number(c.size ?? c.enrolled_students) || 0), 0)
-    : 0;
-  const activeStudentsStr = activeStudentsCount > 0 ? activeStudentsCount.toLocaleString() : '—';
-  
-  const facultyCount = latest?.teachers_data?.length || 0;
-  const facultyStr = facultyCount > 0 ? facultyCount.toString() : '—';
+  // Counts come from the runs-list summary's aggregate fields (added by backend).
+  //  - "Active students" = SUM(class size) for school OR SUM(course enrolment) for college
+  //  - "Faculty"         = teachers (school) or faculty (college)
+  //  - "Rooms"           = rooms in the run
+  const activeStudentsStr = latest?.students_count != null ? String(latest.students_count) : '—';
+  const facultyStr        = latest?.teachers_count != null ? String(latest.teachers_count) : '—';
+  const roomsStr          = latest?.rooms_count != null ? String(latest.rooms_count) : '—';
 
-  const roomsCount = latest?.rooms_data?.length || 0;
-  const roomsStr = roomsCount > 0 ? roomsCount.toString() : '—';
 
+  // Export uses the in-memory generatedTimetable from the store (set after the last solver run).
+  // The runs-list API no longer returns assignment data; assignments live in the store.
   const handleExportExcel = async () => {
-    if (!latest?.generated_timetable?.assignments) return;
+    if (!(generatedTimetable as any)?.assignments) return;
     setExportingExcel(true);
     const tid = toast.loading('Generating Excel Sheets…');
     try {
-      const { assignments, working_days, time_slots } = latest.generated_timetable as any;
-      exportAllViewsToExcel(latest.institution_name || 'Timetable', assignments, working_days, time_slots);
+      const { assignments, working_days, time_slots } = generatedTimetable as any;
+      exportAllViewsToExcel(displayName(latest?.name) !== 'Untitled' ? displayName(latest?.name) : (institutionData?.name || 'Timetable'), assignments, working_days, time_slots);
       toast.success('Downloaded!', { id: tid });
     } catch { toast.error('Export failed', { id: tid }); } finally { setExportingExcel(false); }
   };
 
   const handleExportPdf = async (selections: any) => {
-    if (!latest?.generated_timetable?.assignments) return;
+    if (!(generatedTimetable as any)?.assignments) return;
     setIsPdfModalOpen(false);
     setExportingPdf(true);
     const tid = toast.loading('Generating PDFs…');
     try {
-      const { assignments, working_days, time_slots } = latest.generated_timetable as any;
-      await exportSelectedPDFs(latest.institution_name || 'Timetable', selections, assignments, working_days, time_slots);
+      const { assignments, working_days, time_slots } = generatedTimetable as any;
+      await exportSelectedPDFs(displayName(latest?.name) !== 'Untitled' ? displayName(latest?.name) : (institutionData?.name || 'Timetable'), selections, assignments, working_days, time_slots);
       toast.success('Downloaded!', { id: tid });
     } catch {
       toast.error('Failed to generate PDF archive', { id: tid });
     } finally { setExportingPdf(false); }
+  };
+
+  /**
+   * Open a saved run — fetch its full solver result, hydrate the store, and
+   * navigate to /timetable. View-only; no wizard, no re-solve.
+   */
+  const handleOpenRun = async (run: RunSummary) => {
+    setOpeningId(run.id);
+    try {
+      const res = run.kind === 'college'
+        ? await collegeAPI.getRunResult(run.id)
+        : await schoolAPI.getRunResult(run.id);
+      const result = res.data;
+
+      const instName = displayName(run.name);
+      setInstitutionData(instName !== 'Untitled' ? { name: instName } : null);
+      setGeneratedTimetable(result);
+      useWizardStore.getState().setWorkflow(run.kind);
+
+      navigate('/timetable');
+    } catch {
+      toast.error('Failed to load timetable.');
+    } finally {
+      setOpeningId(null);
+    }
   };
 
   return (
@@ -227,7 +257,7 @@ const DashboardPage: React.FC = () => {
         crumbs={[inst, dept]}
         actions={
           <>
-            <Btn variant="ghost" size="sm">
+            <Btn variant="ghost" size="sm" onClick={() => setImportModalOpen(true)}>
               <Icon name="import" size={13} /> Import Excel
             </Btn>
             <Btn variant="primary" size="sm" onClick={() => navigate('/wizard')}>
@@ -248,7 +278,7 @@ const DashboardPage: React.FC = () => {
                   <Chip tone="ok"><Dot color="var(--ok)" /> live</Chip>
                 </div>
                 <h2 className="serif leading-tight tracking-tight mb-1" style={{ fontSize: 44 }}>
-                  {latest.institution_name}
+                  {displayName(latest.name)}
                 </h2>
                 <p className="text-sm mono mb-4" style={{ color: 'var(--ink-3)' }}>
                   Published {latestWhen} · {latestClashes} clashes · solved in {latestSolve}
@@ -274,10 +304,16 @@ const DashboardPage: React.FC = () => {
               </>
             )}
             <div className="flex items-center gap-2 flex-wrap">
-              <Btn variant="brand" size="sm" onClick={() => navigate(latest ? '/timetable' : '/wizard')}>
-                <Icon name="grid" size={13} /> {latest ? 'Open timetable' : 'Create timetable'}
+              <Btn
+                variant="brand"
+                size="sm"
+                disabled={latest ? openingId === latest.id : false}
+                onClick={() => latest ? handleOpenRun(latest) : navigate('/wizard')}
+              >
+                <Icon name="grid" size={13} />
+                {latest ? (openingId === latest.id ? 'Loading…' : 'Open timetable') : 'Create timetable'}
               </Btn>
-              {latest && latest.generated_timetable?.assignments && (
+              {latest && (generatedTimetable as any)?.assignments && (
                 <>
                   <Btn variant="ghost" size="sm" onClick={handleExportExcel} disabled={exportingExcel}>
                     <Icon name="dl" size={13} /> {exportingExcel ? 'Exporting…' : 'Excel'}
@@ -285,7 +321,6 @@ const DashboardPage: React.FC = () => {
                   <Btn variant="ghost" size="sm" onClick={() => setIsPdfModalOpen(true)} disabled={exportingPdf}>
                     <Icon name="file" size={13} /> {exportingPdf ? 'Exporting…' : 'PDF'}
                   </Btn>
-                  <Btn variant="ghost" size="sm"><Icon name="spark" size={13} /> Compare versions</Btn>
                 </>
               )}
             </div>
@@ -308,9 +343,9 @@ const DashboardPage: React.FC = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               { icon: 'plus',    title: 'New timetable',   sub: 'Start from scratch',       onClick: () => navigate('/wizard') },
-              { icon: 'import',  title: 'Import Excel',    sub: 'Roster + rooms',            onClick: () => {} },
-              { icon: 'stack',   title: 'Duplicate a run', sub: 'Tweak and resolve',         onClick: () => {} },
-              { icon: 'sparkle', title: 'AI draft',        sub: 'Describe in plain English', onClick: () => {} },
+              { icon: 'import',  title: 'Import Excel',    sub: 'Roster + rooms',            onClick: () => setImportModalOpen(true) },
+              { icon: 'stack',   title: 'Duplicate a run', sub: 'Tweak and resolve',         onClick: () => navigate('/history') },
+              { icon: 'sparkle', title: 'AI draft',        sub: 'Describe in plain English', onClick: () => setAiDraftOpen(true) },
             ].map(a => (
               <button
                 key={a.title}
@@ -332,7 +367,7 @@ const DashboardPage: React.FC = () => {
             { label: 'Active students', v: activeStudentsStr, d: latest ? 'latest run' : '—' },
             { label: 'Faculty',         v: facultyStr,        d: latest ? 'latest run' : '—' },
             { label: 'Rooms',           v: roomsStr,          d: latest ? 'latest run' : '—' },
-            { label: 'Avg. solve time', v: latestSolve !== '—' ? latestSolve : '—', d: 'latest run' },
+            { label: 'Solve time',      v: latestSolve,       d: latest ? 'latest run' : '—' },
           ].map((s, i) => (
             <div key={s.label} className="p-5" style={{ borderRight: i < 3 ? '1px solid var(--line)' : undefined }}>
               <div className="eyebrow mb-2" style={{ color: 'var(--ink-3)' }}>{s.label}</div>
@@ -382,42 +417,61 @@ const DashboardPage: React.FC = () => {
                 ) : filtered.length === 0 ? (
                   <EmptyRuns onNew={() => navigate('/wizard')} />
                 ) : (
-                  filtered.map((r, idx) => {
-                    const clashes = r.generated_timetable?.stats?.clashes ?? 0;
-                    const solveRaw = r.solve_time ?? r.generated_timetable?.stats?.solve_time_seconds;
-                    const solve = solveRaw != null ? formatSolveTime(parseFloat(String(solveRaw))) : '—';
-                    const isLatest = idx === 0 && !q;
-                    return (
-                      <tr
-                        key={r.id}
-                        className="transition-colors"
-                        style={{ borderTop: '1px solid var(--line)' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--paper-2)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        <td className="py-3 px-5">
-                          <div className="font-medium">{r.institution_name}</div>
-                          <div className="text-[11px] mono" style={{ color: 'var(--ink-3)' }}>{r.id.slice(0, 8)}</div>
-                        </td>
-                        <td className="py-3 px-5" style={{ color: 'var(--ink-2)' }}>{relativeTime(r.created_at)}</td>
-                        <td className="py-3 px-5">
-                          {isLatest
-                            ? <Chip tone="ok"><Dot color="var(--ok)" /> live</Chip>
-                            : <Chip tone="neutral">archive</Chip>
-                          }
-                        </td>
-                        <td className="py-3 px-5 mono text-[13px]">
-                          <span style={{ color: clashes === 0 ? 'var(--ok)' : 'var(--err)' }}>{clashes}</span>
-                        </td>
-                        <td className="py-3 px-5 mono text-[13px]" style={{ color: 'var(--ink-2)' }}>{solve}</td>
-                        <td className="py-3 px-5 text-right">
-                          <Btn variant="ghost" size="sm" onClick={() => navigate('/timetable')}>
-                            Open <Icon name="arrow" size={12} />
-                          </Btn>
+                  <>
+                    {filtered.slice(0, 10).map((r, idx) => {
+                      const clashes = 0; // not in runs-list summary
+                      const solve = r.solve_time_seconds != null ? formatSolveTime(r.solve_time_seconds) : '—';
+                      const isLatest = idx === 0 && !q;
+                      return (
+                        <tr
+                          key={r.id}
+                          className="transition-colors"
+                          style={{ borderTop: '1px solid var(--line)' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--paper-2)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <td className="py-3 px-5">
+                            <div className="font-medium">{displayName(r.name)}</div>
+                            <div className="text-[11px] mono" style={{ color: 'var(--ink-3)' }}>{r.id.slice(0, 8)}</div>
+                          </td>
+                          <td className="py-3 px-5" style={{ color: 'var(--ink-2)' }}>{relativeTime(r.created_at)}</td>
+                          <td className="py-3 px-5">
+                            {isLatest
+                              ? <Chip tone="ok"><Dot color="var(--ok)" /> live</Chip>
+                              : <Chip tone="neutral">archive</Chip>
+                            }
+                          </td>
+                          <td className="py-3 px-5 mono text-[13px]">
+                            <span style={{ color: clashes === 0 ? 'var(--ok)' : 'var(--err)' }}>{clashes}</span>
+                          </td>
+                          <td className="py-3 px-5 mono text-[13px]" style={{ color: 'var(--ink-2)' }}>{solve}</td>
+                          <td className="py-3 px-5 text-right">
+                            <Btn
+                              variant="ghost"
+                              size="sm"
+                              disabled={openingId === r.id}
+                              onClick={() => handleOpenRun(r)}
+                            >
+                              {openingId === r.id ? 'Loading…' : <>Open <Icon name="arrow" size={12} /></>}
+                            </Btn>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filtered.length > 10 && (
+                      <tr style={{ borderTop: '1px solid var(--line)' }}>
+                        <td colSpan={6} className="py-3 px-5 text-center text-sm">
+                          <button
+                            onClick={() => navigate('/history')}
+                            className="mono text-[12px] hover:opacity-70 transition-opacity"
+                            style={{ color: 'var(--brand)' }}
+                          >
+                            View all {filtered.length} runs →
+                          </button>
                         </td>
                       </tr>
-                    );
-                  })
+                    )}
+                  </>
                 )}
               </tbody>
             </table>
@@ -425,6 +479,8 @@ const DashboardPage: React.FC = () => {
         </div>
       </div>
       <ExportModal isOpen={isPdfModalOpen} onClose={() => setIsPdfModalOpen(false)} onExport={handleExportPdf} />
+      <ImportExcelModal open={importModalOpen} onClose={() => setImportModalOpen(false)} />
+      <AIDraftModal open={aiDraftOpen} onClose={() => setAiDraftOpen(false)} />
     </div>
   );
 };

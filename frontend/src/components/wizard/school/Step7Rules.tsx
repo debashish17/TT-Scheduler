@@ -4,7 +4,7 @@ import { WizardShell } from '../WizardShell';
 import { useWizardStore } from '../wizardStore';
 import { useOnboardingStore } from '../../../store';
 import { Btn, Eyebrow, Chip, Icon } from '../../ui/primitives';
-import { simpleTimetableAPI, snapshotsAPI } from '../../../api/client';
+import { schoolAPI } from '../../../api/client';
 
 // ─── Types ───────────────────────────────────────────────────────
 interface SolverWarning {
@@ -299,13 +299,20 @@ const Step7Rules: React.FC = () => {
   // Soft constraints state
   type SoftConstraint = { type: string; target: string; when: string | null; weight: number };
   const RULE_TYPES = [
-    { value: 'avoid_day',      label: 'Avoid day' },
-    { value: 'avoid_slot',     label: 'Avoid period' },
-    { value: 'prefer_slot',    label: 'Prefer period' },
-    { value: 'spread_subject', label: 'Spread subject' },
-    { value: 'group_on_day',   label: 'Group on day' },
+    { value: 'avoid_day',      label: 'Avoid day',
+      help: 'Try not to schedule the chosen teacher on the chosen day.' },
+    { value: 'avoid_slot',     label: 'Avoid period',
+      help: 'Try not to schedule the chosen teacher at the chosen period.' },
+    { value: 'prefer_slot',    label: 'Prefer period',
+      help: 'Reward scheduling the chosen teacher at the chosen period.' },
+    { value: 'spread_subject', label: 'Spread subject',
+      help: 'Distribute the chosen subject across as many days as possible.' },
+    { value: 'group_on_day',   label: 'Group on day',
+      help: 'Cluster the chosen subject onto the same day if it can.' },
   ];
+  const isSubjectRule = (t: string) => t === 'spread_subject' || t === 'group_on_day';
   const [showAddPref, setShowAddPref] = useState(false);
+  const [showRuleHelp, setShowRuleHelp] = useState(false);
   const [prefType, setPrefType]       = useState('avoid_day');
   const [prefTarget, setPrefTarget]   = useState('');
   const [prefWhen, setPrefWhen]       = useState('');
@@ -451,7 +458,7 @@ const Step7Rules: React.FC = () => {
         setSolveProgress(p);
       }, 150);
 
-      const response = await simpleTimetableAPI.generate(request);
+      const response = await schoolAPI.generate(request);
       clearInterval(progressTick);
       setSolveProgress(1);
 
@@ -518,40 +525,10 @@ const Step7Rules: React.FC = () => {
         }
       }
 
-      // Auto-save (non-blocking)
-      const isPrecheck = timetableData.solver === 'Precheck' || !timetableData.assignments;
-      if (!isPrecheck) {
-        try {
-          simpleTimetableAPI.saveTimetable({
-            institution_name: request.institution_name,
-            name: `${request.institution_name} Timetable`,
-            solver: timetableData.solver || 'CP-SAT',
-            status: timetableData.status || 'FEASIBLE',
-            solve_time: timetableData.solve_time || 0,
-            assignments: timetableData.assignments || [],
-            working_days: request.working_days,
-            periods_per_day: request.periods_per_day,
-            stats: timetableData.stats || {},
-          });
-        } catch (saveErr: any) {
-          console.warn('Auto-save warning:', saveErr.message);
-        }
-
-        try {
-          snapshotsAPI.save({
-            institution_name: request.institution_name,
-            institution_data: institutionData || {},
-            classes_data: classesData || [],
-            subjects_data: subjectsData || [],
-            teachers_data: teachersData || [],
-            time_data: timeData || {},
-            rooms_data: roomsData || [],
-            constraints_data: constraintsData || {},
-            generated_timetable: timetableData,
-          });
-        } catch (snapErr: any) {
-          console.warn('Snapshot save warning:', snapErr.message);
-        }
+      // Auto-save is built into /school/generate — run_id is returned in timetableData.
+      // No separate save call needed.
+      if (timetableData.run_id) {
+        console.log(`Run saved automatically: ${timetableData.run_id}`);
       }
     } catch (err: any) {
       let msg: string;
@@ -696,12 +673,11 @@ const Step7Rules: React.FC = () => {
           </div>
 
           {/* Configurable limits */}
+          {/* "Max consecutive periods / teacher" was removed because the school
+              solver does not enforce it — see audit. Re-add when the solver
+              wires `max_consecutive_periods` into a real CP-SAT constraint. */}
           <div className="grid grid-cols-2 gap-3">
             {[
-              {
-                label: 'Max consecutive periods / teacher', value: maxConsec, min: 1, max: 8,
-                onChange: (v: number) => { setMaxConsec(v); saveConstraints({ max_consecutive_periods: v }); }
-              },
               {
                 label: 'Max periods / teacher / day', value: maxPerDay, min: 1, max: 12,
                 onChange: (v: number) => { setMaxPerDay(v); saveConstraints({ max_periods_per_day_per_teacher: v }); }
@@ -743,7 +719,7 @@ const Step7Rules: React.FC = () => {
                 <p className="text-sm" style={{ color: 'var(--ink-3)' }}>No preferences added yet.</p>
               )}
               <button className="flex items-center gap-2 text-sm" style={{ color: 'var(--ink-3)' }}
-                onClick={() => setShowAddPref(true)}>
+                onClick={() => { setShowRuleHelp(false); setShowAddPref(true); }}>
                 <Icon name="plus" size={13} /> Add preference
               </button>
             </div>
@@ -1028,21 +1004,80 @@ const Step7Rules: React.FC = () => {
             </div>
             <div className="px-6 py-4 space-y-4">
               <div>
-                <span className="text-[12px] font-medium block mb-1" style={{ color: 'var(--ink-2)' }}>Rule type</span>
-                <select value={prefType} onChange={e => setPrefType(e.target.value)}
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[12px] font-medium" style={{ color: 'var(--ink-2)' }}>Rule type</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowRuleHelp(v => !v)}
+                    className="flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-semibold transition-colors"
+                    style={{
+                      background: showRuleHelp ? 'var(--ink)' : 'var(--paper-2)',
+                      color: showRuleHelp ? 'var(--paper)' : 'var(--ink-3)',
+                    }}
+                    aria-label="What do these rules do?"
+                    title="What do these rules do?"
+                  >i</button>
+                </div>
+                <select value={prefType} onChange={e => {
+                    setPrefType(e.target.value);
+                    setPrefTarget('');   // target depends on type, clear it
+                    setPrefWhen('');
+                  }}
                   className="w-full px-3 py-2 rounded-md text-sm outline-none"
                   style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}>
                   {RULE_TYPES.map(rt => <option key={rt.value} value={rt.value}>{rt.label}</option>)}
                 </select>
+                {showRuleHelp && (
+                  <div className="mt-2 rounded-md px-3 py-2.5 text-[11px] space-y-1.5"
+                    style={{ background: 'var(--paper-2)', color: 'var(--ink-2)' }}>
+                    {RULE_TYPES.map(rt => (
+                      <div key={rt.value}>
+                        <span className="font-semibold mono mr-1.5">{rt.label}:</span>
+                        <span>{rt.help}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <span className="text-[12px] font-medium block mb-1" style={{ color: 'var(--ink-2)' }}>
-                  {prefType === 'spread_subject' || prefType === 'group_on_day' ? 'Subject code' : 'Teacher name'}
+                  {isSubjectRule(prefType) ? 'Subject' : 'Teacher'}
                 </span>
-                <input value={prefTarget} onChange={e => setPrefTarget(e.target.value)}
-                  placeholder={prefType === 'spread_subject' || prefType === 'group_on_day' ? 'e.g. MATH' : 'e.g. Mrs. Sharma'}
-                  className="w-full px-3 py-2 rounded-md text-sm outline-none"
-                  style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }} />
+                {isSubjectRule(prefType) ? (
+                  (subjectsData?.length ?? 0) === 0 ? (
+                    <div className="px-3 py-2 rounded-md text-sm"
+                      style={{ background: 'var(--paper-2)', color: 'var(--ink-3)' }}>
+                      No subjects added yet — go to step 3 first.
+                    </div>
+                  ) : (
+                    <select value={prefTarget} onChange={e => setPrefTarget(e.target.value)}
+                      className="w-full px-3 py-2 rounded-md text-sm outline-none"
+                      style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}>
+                      <option value="">— select subject —</option>
+                      {(subjectsData || []).filter((s: any) => s?.code).map((s: any) => (
+                        <option key={s.code} value={s.code}>
+                          {s.code}{s.name ? ` — ${s.name}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )
+                ) : (
+                  (teachersData?.length ?? 0) === 0 ? (
+                    <div className="px-3 py-2 rounded-md text-sm"
+                      style={{ background: 'var(--paper-2)', color: 'var(--ink-3)' }}>
+                      No teachers added yet — go to step 4 first.
+                    </div>
+                  ) : (
+                    <select value={prefTarget} onChange={e => setPrefTarget(e.target.value)}
+                      className="w-full px-3 py-2 rounded-md text-sm outline-none"
+                      style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}>
+                      <option value="">— select teacher —</option>
+                      {(teachersData || []).filter((t: any) => t?.name).map((t: any, i: number) => (
+                        <option key={`${t.name}-${i}`} value={t.name}>{t.name}</option>
+                      ))}
+                    </select>
+                  )
+                )}
               </div>
               {prefType === 'avoid_day' && (
                 <div>

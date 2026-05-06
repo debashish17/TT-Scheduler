@@ -3,6 +3,15 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'react-hot-toast';
 
+const GoogleIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 48 48" fill="none">
+    <path d="M47.5 24.5c0-1.6-.1-3.2-.4-4.7H24v8.9h13.2c-.6 3-2.3 5.5-5 7.2v6h8c4.7-4.3 7.3-10.7 7.3-17.4z" fill="#4285F4"/>
+    <path d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-8-6c-2.1 1.4-4.8 2.3-7.9 2.3-6.1 0-11.2-4.1-13-9.6H2.7v6.2C6.7 42.8 14.8 48 24 48z" fill="#34A853"/>
+    <path d="M11 28.9c-.5-1.4-.7-2.9-.7-4.4s.3-3 .7-4.4V14H2.7C1 17.3 0 20.6 0 24.5s1 7.2 2.7 10.5l8.3-6.1z" fill="#FBBC05"/>
+    <path d="M24 9.5c3.4 0 6.5 1.2 8.9 3.5l6.6-6.6C35.9 2.6 30.5 0 24 0 14.8 0 6.7 5.2 2.7 13l8.3 6.4C12.8 13.6 17.9 9.5 24 9.5z" fill="#EA4335"/>
+  </svg>
+);
+
 const Login = () => {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
@@ -34,7 +43,7 @@ const Login = () => {
     >
       {/* Left panel — brand */}
       <div
-        className="hidden lg:flex flex-col justify-between w-[480px] shrink-0 p-12"
+        className="hidden lg:flex flex-col w-[480px] shrink-0 p-12"
         style={{ background: 'var(--ink)', color: 'var(--paper)' }}
       >
         {/* Logo */}
@@ -51,7 +60,7 @@ const Login = () => {
         </div>
 
         {/* Mid copy */}
-        <div>
+        <div className="flex-1 flex flex-col justify-center">
           <p className="eyebrow mb-4" style={{ color: 'rgba(255,255,255,0.45)' }}>
             Timetabling, solved
           </p>
@@ -62,20 +71,6 @@ const Login = () => {
           <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
             A CP-SAT constraint solver that builds complete, conflict-free timetables for schools and colleges in seconds.
           </p>
-        </div>
-
-        {/* Bottom stat strip */}
-        <div className="grid grid-cols-3 gap-0" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 24 }}>
-          {[
-            { v: '3.4s', l: 'avg solve' },
-            { v: '0',    l: 'clashes' },
-            { v: '8',    l: 'constraints' },
-          ].map((s, i) => (
-            <div key={s.l} className="pr-4" style={{ borderRight: i < 2 ? '1px solid rgba(255,255,255,0.1)' : undefined, paddingLeft: i > 0 ? 16 : 0 }}>
-              <div className="serif text-3xl" style={{ color: 'var(--paper)' }}>{s.v}</div>
-              <div className="text-[11px] mono mt-1" style={{ color: 'rgba(255,255,255,0.4)' }}>{s.l}</div>
-            </div>
-          ))}
         </div>
       </div>
 
@@ -100,6 +95,23 @@ const Login = () => {
             <p className="text-sm" style={{ color: 'var(--ink-3)' }}>Sign in to your workspace</p>
           </div>
 
+          {/* Google OAuth */}
+          <button
+            type="button"
+            onClick={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + '/dashboard' } })}
+            className="w-full flex items-center justify-center gap-3 py-2.5 rounded-full text-sm font-medium transition-opacity hover:opacity-80 mb-4"
+            style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}
+          >
+            <GoogleIcon />
+            Continue with Google
+          </button>
+
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex-1 h-px" style={{ background: 'var(--line)' }} />
+            <span className="text-[11px] mono" style={{ color: 'var(--ink-3)' }}>or</span>
+            <div className="flex-1 h-px" style={{ background: 'var(--line)' }} />
+          </div>
+
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-[12px] font-medium mb-1.5" style={{ color: 'var(--ink-2)' }}>
@@ -120,9 +132,18 @@ const Login = () => {
             </div>
 
             <div>
-              <label className="block text-[12px] font-medium mb-1.5" style={{ color: 'var(--ink-2)' }}>
-                Password
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[12px] font-medium" style={{ color: 'var(--ink-2)' }}>
+                  Password
+                </label>
+                <Link
+                  to="/forgot-password"
+                  className="text-[12px] transition-opacity hover:opacity-70"
+                  style={{ color: 'var(--ink-3)' }}
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <input
                 type="password"
                 required

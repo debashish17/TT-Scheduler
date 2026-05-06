@@ -16,6 +16,9 @@ from app.core.config import settings
 
 # Import our Base and all models
 from app.db.base import Base
+import app.models.shared  # noqa: F401  -- registers User, Run, RunSoftConstraint
+import app.models.school  # noqa: F401  -- registers school branch tables
+import app.models.college  # noqa: F401  -- registers college branch tables
 
 # this is the Alembic Config object
 config = context.config

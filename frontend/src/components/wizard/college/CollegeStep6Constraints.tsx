@@ -25,7 +25,11 @@ const DEFAULT: ConstraintsData = { maxConsecutivePeriods: 3, maxPeriodsPerDayPer
 const CollegeStep6Constraints: React.FC = () => {
   const { workflow } = useWizardStore();
   void workflow;
-  const { collegeConstraints, setCollegeConstraints, softConstraintsCollege, setSoftConstraintsCollege } = useOnboardingStore();
+  const {
+    collegeConstraints, setCollegeConstraints,
+    softConstraintsCollege, setSoftConstraintsCollege,
+    collegeFaculty, courseOfferings,
+  } = useOnboardingStore();
 
   const [active, setActive] = useState<Set<number>>(
     () => new Set(CONSTRAINTS.map(c => c.id))
@@ -53,13 +57,20 @@ const CollegeStep6Constraints: React.FC = () => {
 
   type SoftConstraint = { type: string; target: string; when: string | null; weight: number };
   const RULE_TYPES_COLLEGE = [
-    { value: 'avoid_day',      label: 'Avoid day' },
-    { value: 'avoid_slot',     label: 'Avoid period' },
-    { value: 'prefer_slot',    label: 'Prefer period' },
-    { value: 'spread_subject', label: 'Spread course' },
-    { value: 'group_on_day',   label: 'Group on day' },
+    { value: 'avoid_day',      label: 'Avoid day',
+      help: 'Try not to schedule the chosen faculty on the chosen day.' },
+    { value: 'avoid_slot',     label: 'Avoid period',
+      help: 'Try not to schedule the chosen faculty at the chosen period.' },
+    { value: 'prefer_slot',    label: 'Prefer period',
+      help: 'Reward scheduling the chosen faculty at the chosen period.' },
+    { value: 'spread_subject', label: 'Spread course',
+      help: 'Distribute the chosen course across as many days as possible.' },
+    { value: 'group_on_day',   label: 'Group on day',
+      help: 'Cluster the chosen course onto the same day if it can.' },
   ];
+  const isCourseRule = (t: string) => t === 'spread_subject' || t === 'group_on_day';
   const [showAddPref, setShowAddPref] = useState(false);
+  const [showRuleHelp, setShowRuleHelp] = useState(false);
   const [prefType, setPrefType]       = useState('avoid_day');
   const [prefTarget, setPrefTarget]   = useState('');
   const [prefWhen, setPrefWhen]       = useState('');
@@ -115,13 +126,12 @@ const CollegeStep6Constraints: React.FC = () => {
         </div>
 
         {/* Numeric limits */}
+        {/* "Max consecutive periods / faculty" was removed because the college
+            solver hard-codes a same-day-3+ penalty rather than reading this
+            value — see audit. Re-add when the solver uses `max_consec` in a
+            window-sliding constraint. */}
         <div className="grid grid-cols-2 gap-3">
           {[
-            {
-              label: 'Max consecutive periods / faculty',
-              value: data.maxConsecutivePeriods, min: 1, max: 8,
-              onChange: (v: number) => save({ maxConsecutivePeriods: v }),
-            },
             {
               label: 'Max periods / faculty / day',
               value: data.maxPeriodsPerDayPerFaculty, min: 1, max: 12,
@@ -166,7 +176,7 @@ const CollegeStep6Constraints: React.FC = () => {
               <p className="text-sm" style={{ color: 'var(--ink-3)' }}>No preferences added yet.</p>
             )}
             <button className="flex items-center gap-2 text-sm" style={{ color: 'var(--ink-3)' }}
-              onClick={() => setShowAddPref(true)}>
+              onClick={() => { setShowRuleHelp(false); setShowAddPref(true); }}>
               <Icon name="plus" size={13} /> Add preference
             </button>
           </div>
@@ -186,21 +196,82 @@ const CollegeStep6Constraints: React.FC = () => {
           </div>
           <div className="px-6 py-4 space-y-4">
             <div>
-              <span className="text-[12px] font-medium block mb-1" style={{ color: 'var(--ink-2)' }}>Rule type</span>
-              <select value={prefType} onChange={e => setPrefType(e.target.value)}
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[12px] font-medium" style={{ color: 'var(--ink-2)' }}>Rule type</span>
+                <button
+                  type="button"
+                  onClick={() => setShowRuleHelp(v => !v)}
+                  className="flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-semibold transition-colors"
+                  style={{
+                    background: showRuleHelp ? 'var(--ink)' : 'var(--paper-2)',
+                    color: showRuleHelp ? 'var(--paper)' : 'var(--ink-3)',
+                  }}
+                  aria-label="What do these rules do?"
+                  title="What do these rules do?"
+                >i</button>
+              </div>
+              <select value={prefType} onChange={e => {
+                  setPrefType(e.target.value);
+                  setPrefTarget('');   // target depends on type, clear it
+                  setPrefWhen('');
+                }}
                 className="w-full px-3 py-2 rounded-md text-sm outline-none"
                 style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}>
                 {RULE_TYPES_COLLEGE.map(rt => <option key={rt.value} value={rt.value}>{rt.label}</option>)}
               </select>
+              {showRuleHelp && (
+                <div className="mt-2 rounded-md px-3 py-2.5 text-[11px] space-y-1.5"
+                  style={{ background: 'var(--paper-2)', color: 'var(--ink-2)' }}>
+                  {RULE_TYPES_COLLEGE.map(rt => (
+                    <div key={rt.value}>
+                      <span className="font-semibold mono mr-1.5">{rt.label}:</span>
+                      <span>{rt.help}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <span className="text-[12px] font-medium block mb-1" style={{ color: 'var(--ink-2)' }}>
-                {prefType === 'spread_subject' || prefType === 'group_on_day' ? 'Course code' : 'Faculty code'}
+                {isCourseRule(prefType) ? 'Course' : 'Faculty'}
               </span>
-              <input value={prefTarget} onChange={e => setPrefTarget(e.target.value)}
-                placeholder={prefType === 'spread_subject' || prefType === 'group_on_day' ? 'e.g. CS301' : 'e.g. FAC001'}
-                className="w-full px-3 py-2 rounded-md text-sm outline-none"
-                style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }} />
+              {isCourseRule(prefType) ? (
+                (courseOfferings?.length ?? 0) === 0 ? (
+                  <div className="px-3 py-2 rounded-md text-sm"
+                    style={{ background: 'var(--paper-2)', color: 'var(--ink-3)' }}>
+                    No courses added yet — go to step 2 first.
+                  </div>
+                ) : (
+                  <select value={prefTarget} onChange={e => setPrefTarget(e.target.value)}
+                    className="w-full px-3 py-2 rounded-md text-sm outline-none"
+                    style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}>
+                    <option value="">— select course —</option>
+                    {(courseOfferings || []).filter((c: any) => c?.code).map((c: any) => (
+                      <option key={c.code} value={c.code}>
+                        {c.code}{c.name ? ` — ${c.name}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )
+              ) : (
+                (collegeFaculty?.length ?? 0) === 0 ? (
+                  <div className="px-3 py-2 rounded-md text-sm"
+                    style={{ background: 'var(--paper-2)', color: 'var(--ink-3)' }}>
+                    No faculty added yet — go to step 3 first.
+                  </div>
+                ) : (
+                  <select value={prefTarget} onChange={e => setPrefTarget(e.target.value)}
+                    className="w-full px-3 py-2 rounded-md text-sm outline-none"
+                    style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}>
+                    <option value="">— select faculty —</option>
+                    {(collegeFaculty || []).filter((f: any) => f?.code).map((f: any) => (
+                      <option key={f.code} value={f.code}>
+                        {f.code}{f.name ? ` — ${f.name}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )
+              )}
             </div>
             {prefType === 'avoid_day' && (
               <div>

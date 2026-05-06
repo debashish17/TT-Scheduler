@@ -449,6 +449,7 @@ const Testimonial: React.FC<{ workflow: string }> = ({ workflow }) => {
 
 // ─── CTA ─────────────────────────────────────────────────────────────────────
 const CTA: React.FC<{ workflow: string; onEnter: () => void }> = ({ workflow, onEnter }) => {
+  const navigate = useNavigate();
   const isSchool = workflow === 'school';
   return (
     <section className="max-w-[1280px] mx-auto px-8 py-32 text-center">
@@ -461,46 +462,80 @@ const CTA: React.FC<{ workflow: string; onEnter: () => void }> = ({ workflow, on
       </h2>
       <div className="mt-10 flex items-center justify-center gap-3">
         <Btn variant="primary" size="lg" onClick={onEnter}>Open the app <Icon name="arrow" size={14} /></Btn>
-        <Btn variant="ghost" size="lg">Read the docs</Btn>
+        <Btn variant="ghost" size="lg" onClick={() => navigate('/docs')}>Read the docs</Btn>
       </div>
     </section>
   );
 };
 
 // ─── Footer ───────────────────────────────────────────────────────────────────
-const Footer: React.FC = () => (
-  <footer style={{ borderTop: '1px solid var(--line)' }}>
-    <div className="max-w-[1280px] mx-auto px-8 py-12 grid grid-cols-2 md:grid-cols-5 gap-8 text-sm">
-      <div className="col-span-2">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-6 h-6 rounded" style={{ background: 'var(--ink)' }} />
-          <span className="font-bold">TT-Scheduler</span>
+const Footer: React.FC = () => {
+  const navigate = useNavigate();
+  const COLS = [
+    { h: 'Product', ls: [
+      { l: 'Features',    id: 'features'    },
+      { l: 'Solver',      id: 'solver'      },
+      { l: 'Changelog',   id: 'changelog'   },
+    ]},
+    { h: 'Docs', ls: [
+      { l: 'Quickstart',  id: 'quickstart'  },
+      { l: 'API',         id: 'api'         },
+      { l: 'Constraints', id: 'constraints' },
+      { l: 'Excel import',id: 'excel-import'},
+      { l: 'User Manual', id: 'user-manual' },
+    ]},
+    { h: 'Company', ls: [
+      { l: 'About',       id: 'about'       },
+      { l: 'Contact',     id: 'contact'     },
+    ]},
+  ];
+  return (
+    <footer style={{ borderTop: '1px solid var(--line)' }}>
+      <div className="max-w-[1280px] mx-auto px-8 py-12 grid grid-cols-2 md:grid-cols-5 gap-8 text-sm">
+        <div className="col-span-2">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-6 h-6 rounded flex items-center justify-center" style={{ background: 'var(--ink)' }}>
+              <div className="grid grid-cols-2 gap-[1.5px]">
+                <div className="w-[3px] h-[3px] rounded-[1px] bg-white" />
+                <div className="w-[3px] h-[3px] rounded-[1px] bg-white opacity-40" />
+                <div className="w-[3px] h-[3px] rounded-[1px] bg-white opacity-40" />
+                <div className="w-[3px] h-[3px] rounded-[1px] bg-white" />
+              </div>
+            </div>
+            <span className="font-bold">TT-Scheduler</span>
+          </div>
+          <p className="text-[13px] max-w-xs" style={{ color: 'var(--ink-3)' }}>
+            Conflict-free timetables for schools and colleges — powered by constraint solving.
+          </p>
         </div>
-        <p className="text-[13px] max-w-xs" style={{ color: 'var(--ink-3)' }}>
-          Conflict-free timetables for schools and colleges — powered by constraint solving.
-        </p>
+        {COLS.map(col => (
+          <div key={col.h}>
+            <div className="eyebrow mb-3" style={{ color: 'var(--ink-3)' }}>{col.h}</div>
+            <ul className="space-y-1.5">
+              {col.ls.map(({ l, id }) => (
+                <li key={id}>
+                  <button
+                    onClick={() => navigate(`/docs#${id}`)}
+                    className="text-left hover:opacity-70 transition-opacity"
+                    style={{ color: 'var(--ink-2)' }}
+                  >
+                    {l}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
-      {[
-        { h: 'Product', ls: ['Features', 'Solver', 'Changelog'] },
-        { h: 'Docs', ls: ['Quickstart', 'API', 'Constraints', 'Excel import'] },
-        { h: 'Company', ls: ['About', 'Customers', 'Blog', 'Contact'] },
-      ].map(col => (
-        <div key={col.h}>
-          <div className="eyebrow mb-3" style={{ color: 'var(--ink-3)' }}>{col.h}</div>
-          <ul className="space-y-1.5" style={{ color: 'var(--ink-2)' }}>
-            {col.ls.map(l => <li key={l}>{l}</li>)}
-          </ul>
+      <div style={{ borderTop: '1px solid var(--line)' }}>
+        <div className="max-w-[1280px] mx-auto px-8 py-5 flex items-center justify-between text-xs mono" style={{ color: 'var(--ink-3)' }}>
+          <span>© 2026 TT-Scheduler · MIT</span>
+          <span>solver: CP-SAT 9.10</span>
         </div>
-      ))}
-    </div>
-    <div style={{ borderTop: '1px solid var(--line)' }}>
-      <div className="max-w-[1280px] mx-auto px-8 py-5 flex items-center justify-between text-xs mono" style={{ color: 'var(--ink-3)' }}>
-        <span>© 2026 TT-Scheduler · MIT</span>
-        <span>solver: CP-SAT 9.10 · uptime 99.98%</span>
       </div>
-    </div>
-  </footer>
-);
+    </footer>
+  );
+};
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 const LandingPage: React.FC = () => {

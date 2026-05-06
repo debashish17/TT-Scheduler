@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.user import User, UserRole
+from app.models.shared.user import User
 
 # Initialize Supabase client
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
@@ -39,14 +39,9 @@ async def get_current_user(
         # 1. Check if the user already exists in the local database
         db_user = db.query(User).filter(User.id == supabase_user.id).first()
         
-        # 2. Lazy Creation: If the user doesn't exist, create them as an admin with NO institution
+        # 2. Lazy Creation: If the user doesn't exist, create a minimal profile
         if not db_user:
-            db_user = User(
-                id=supabase_user.id,
-                email=supabase_user.email,
-                role=UserRole.SUPER_ADMIN,
-                institution_id=None,  # Null until they construct their first timetable
-            )
+            db_user = User(id=supabase_user.id, email=supabase_user.email)
             db.add(db_user)
             db.commit()
             db.refresh(db_user)

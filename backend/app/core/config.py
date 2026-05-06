@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     # Frontend URL for email links
     FRONTEND_URL: str = "http://localhost:5173"
 
+    # AI / Anthropic Claude (optional — required only for the AI Draft feature)
+    # Get your key at https://console.anthropic.com/keys
+    ANTHROPIC_API_KEY: Optional[str] = None
+    ANTHROPIC_MODEL: str = "claude-haiku-4-5-20251001"
+
     # Database connection pool settings
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20

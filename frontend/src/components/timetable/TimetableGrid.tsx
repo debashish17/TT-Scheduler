@@ -6,6 +6,8 @@ import toast from 'react-hot-toast';
 import { exportAllViewsToExcel, exportSelectedPDFs } from '../../utils/exportHelpers';
 import ExportModal from './ExportModal';
 import { buildSubjectColor, SchoolTable, Legend } from './SharedTimetableGrid';
+import { hydrateRunIntoWizard } from './hydrateRunIntoWizard';
+import { useWizardStore } from '../wizard/wizardStore';
 
 const NAV = [
   { id: 'timetable',    label: 'Class',     path: '/timetable'    },
@@ -18,9 +20,48 @@ const NAV = [
 const TimetableGrid: React.FC = () => {
   const navigate = useNavigate();
   const { generatedTimetable, institutionData } = useOnboardingStore();
+
+  // ── ALL hooks declared up-front (rules-of-hooks: no hooks after the
+  //    early return below). Derived values that depend on the timetable
+  //    are computed unconditionally and default safely when null.
   const [exportingExcel, setExportingExcel] = useState(false);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+
+  // Pre-compute the class list so the selectedClass default is stable.
+  const earlyAssignments = (generatedTimetable as any)?.assignments ?? [];
+  const earlyClasses = [
+    ...new Set((earlyAssignments as any[]).map((a: any) => a.class_name)),
+  ].sort() as string[];
+  const [selectedClass, setSelectedClass] = useState<string>(earlyClasses[0] || '');
+
+  /**
+   * Regenerate = hydrate the saved run's wizard inputs and jump to step 1
+   * so the user can tweak inputs and re-solve. If we can't infer the run id
+   * (e.g. user is viewing a fresh local solve that wasn't auto-saved), fall
+   * back to /wizard with current store data preserved.
+   */
+  const handleRegenerate = async () => {
+    const runId = (generatedTimetable as any)?.run_id;
+    const runKind: 'school' | 'college' = useWizardStore.getState().workflow === 'college'
+      ? 'college'
+      : 'school';
+    if (!runId) {
+      navigate('/wizard/step/1');
+      return;
+    }
+    setRegenerating(true);
+    try {
+      await hydrateRunIntoWizard(runId, runKind);
+      navigate('/wizard/step/1');
+    } catch {
+      toast.error('Could not load saved inputs — opening the wizard with current data.');
+      navigate('/wizard/step/1');
+    } finally {
+      setRegenerating(false);
+    }
+  };
 
   if (!generatedTimetable) {
     return (
@@ -43,13 +84,19 @@ const TimetableGrid: React.FC = () => {
   const errors   = (warnings as any[]).filter((w: any) => w.level === 'error');
   const cautions = (warnings as any[]).filter((w: any) => w.level === 'warning');
 
-  const classes = [...new Set((assignments as any[]).map((a: any) => a.class_name))].sort() as string[];
-  const [selectedClass, setSelectedClass] = useState<string>(classes[0] || '');
+  const classes = earlyClasses;
   const allSubjects = [...new Set((assignments as any[]).map((a: any) => a.subject_code))] as string[];
   const subjectColor = buildSubjectColor(allSubjects);
   const periods = (time_slots as any[]).map((s: any, i: number) => ({ period: i + 1, ...s }));
 
-  const classAssignments = (assignments as any[]).filter((a: any) => a.class_name === selectedClass);
+  // selectedClass's initializer ran on first render when the timetable may
+  // not have loaded yet (so earlyClasses was empty and we defaulted to '').
+  // Resolve a sane current value at render time: stick with the user's pick
+  // if it's still in the list, otherwise pick the first class.
+  const activeClass = (selectedClass && classes.includes(selectedClass))
+    ? selectedClass
+    : (classes[0] || '');
+  const classAssignments = (assignments as any[]).filter((a: any) => a.class_name === activeClass);
 
   const handleExportExcel = async () => {
     setExportingExcel(true);
@@ -76,7 +123,7 @@ const TimetableGrid: React.FC = () => {
     <div className="screen-enter">
       <TopBar
         title="Timetable"
-        crumbs={[institutionData?.name || 'School', selectedClass]}
+        crumbs={[institutionData?.name || 'School', activeClass]}
         actions={
           <>
             <Btn variant="ghost" size="sm" onClick={handleExportExcel} disabled={exportingExcel}>
@@ -137,9 +184,9 @@ const TimetableGrid: React.FC = () => {
               <button key={cls} onClick={() => setSelectedClass(cls)}
                 className="px-3 py-1 rounded-full text-sm font-medium transition-colors"
                 style={{
-                  background: selectedClass === cls ? 'var(--ink)' : 'var(--paper)',
-                  color: selectedClass === cls ? 'var(--paper)' : 'var(--ink-2)',
-                  border: `1px solid ${selectedClass === cls ? 'var(--ink)' : 'var(--line)'}`,
+                  background: activeClass === cls ? 'var(--ink)' : 'var(--paper)',
+                  color: activeClass === cls ? 'var(--paper)' : 'var(--ink-2)',
+                  border: `1px solid ${activeClass === cls ? 'var(--ink)' : 'var(--line)'}`,
                 }}>
                 {cls}
               </button>
@@ -164,7 +211,9 @@ const TimetableGrid: React.FC = () => {
 
         {/* Action row */}
         <div className="flex items-center justify-between">
-          <Btn variant="ghost" size="sm" onClick={() => navigate('/wizard')}>← Regenerate</Btn>
+          <Btn variant="ghost" size="sm" disabled={regenerating} onClick={handleRegenerate}>
+            {regenerating ? 'Loading…' : '← Regenerate'}
+          </Btn>
           <div className="flex gap-2">
             <Btn variant="ghost" size="sm" onClick={() => navigate('/faculty-view')}>Faculty</Btn>
             <Btn variant="ghost" size="sm" onClick={() => navigate('/student-view')}>Student</Btn>

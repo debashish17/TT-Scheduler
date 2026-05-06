@@ -12,7 +12,7 @@
 import { useEffect, useRef } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useOnboardingStore } from '../store';
-import { snapshotsAPI } from '../api/client';
+import { runsAPI, schoolAPI, collegeAPI } from '../api/client';
 
 export function useRestoreSnapshot() {
   const user   = useAuthStore((s) => s.user);
@@ -29,7 +29,6 @@ export function useRestoreSnapshot() {
     setTimeData,
     setRoomsData,
     setConstraintsData,
-    setGeneratedTimetable,
     clearOnboardingData,
   } = useOnboardingStore();
 
@@ -58,34 +57,49 @@ export function useRestoreSnapshot() {
         return;
       }
 
-      // ── Step 3: Fetch latest snapshot from backend ────────────
+      // ── Step 3: Fetch latest run from backend ────────────────
       try {
-        const res = await snapshotsAPI.getLatest();
-        if (res.data?.found && res.data.snapshot) {
-          const snap = res.data.snapshot;
+        const res = await runsAPI.list();
+        const runs: any[] = res.data?.runs ?? [];
+        if (runs.length > 0) {
+          // Pick the most recent run (list is newest-first).
+          // The new getRun endpoint returns the wizard request shape directly
+          // (no wrapper). We import the appropriate getRun based on kind.
+          const latest = runs[0];
+          const runRes = latest.kind === 'college'
+            ? await collegeAPI.getRun(latest.id)
+            : await schoolAPI.getRun(latest.id);
+          const run = runRes.data;
 
-          setInstitutionData(snap.institution_data  || null);
-          setClassesData(    snap.classes_data       || []);
-          setSubjectsData(   snap.subjects_data      || []);
-          setTeachersData(   snap.teachers_data      || []);
-          setTimeData(       snap.time_data          || null);
-          setRoomsData(      snap.rooms_data         || []);
-          setConstraintsData(snap.constraints_data   || null);
-
-          if (snap.generated_timetable && snap.generated_timetable.success) {
-            setGeneratedTimetable(snap.generated_timetable);
-          }
+          // Map new wizard-shaped fields → store fields
+          setInstitutionData({ name: run.institution_name } || null);
+          setClassesData(    run.classes       || []);
+          setSubjectsData(   run.subjects      || []);
+          setTeachersData(   run.teachers      || []);
+          setTimeData(       run.working_days ? {
+            workingDays: run.working_days,
+            periodsPerDay: run.periods_per_day,
+            periodDuration: run.period_duration_minutes,
+            startTime: run.start_time,
+            lunchDuration: run.lunch_duration_minutes,
+            lunchAfterPeriod: run.constraints?.lunch_after_period ?? 0,
+            haslunch: (run.lunch_duration_minutes ?? 0) > 0
+              && (run.constraints?.lunch_after_period ?? 0) > 0,
+          } : null);
+          setRoomsData(      run.rooms         || []);
+          setConstraintsData(run.constraints   || null);
+          // generated_timetable is not returned by getRun — user must re-run solver
 
           console.log(
-            `✅ Snapshot restored for user ${user.id}: ` +
-            `"${snap.institution_name}" (${snap.created_at?.slice(0, 10)})`
+            `✅ Run restored for user ${user.id}: ` +
+            `"${run.institution_name}" (${latest.created_at?.slice(0, 10)})`
           );
         } else {
-          console.log('ℹ️ No previous snapshot found for user, starting fresh.');
+          console.log('ℹ️ No previous run found for user, starting fresh.');
         }
       } catch (err) {
         // Backend unreachable — use whatever localStorage has; that's fine
-        console.warn('Snapshot restore skipped (backend unavailable):', err);
+        console.warn('Run restore skipped (backend unavailable):', err);
       }
 
       // Mark userId in store and in our session ref

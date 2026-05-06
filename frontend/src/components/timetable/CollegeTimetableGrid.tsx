@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
 import { Btn, TopBar } from '../ui/primitives';
 import { buildSubjectColor, CollegeTable, Legend } from './SharedTimetableGrid';
+import { hydrateRunIntoWizard } from './hydrateRunIntoWizard';
+import toast from 'react-hot-toast';
 
 const NAV = [
   { id: 'timetable',    label: 'Class',     path: '/timetable'    },
@@ -15,6 +17,33 @@ const NAV = [
 const CollegeTimetableGrid: React.FC = () => {
   const navigate = useNavigate();
   const { generatedTimetable } = useOnboardingStore();
+
+  // ── ALL hooks declared up-front (rules-of-hooks: no hooks after the
+  //    early return below).
+  const [regenerating, setRegenerating] = useState(false);
+  const earlyAssignments = (generatedTimetable as any)?.assignments ?? [];
+  const earlyCodes = [
+    ...new Set((earlyAssignments as any[]).map((a: any) => a.subject_code)),
+  ].sort() as string[];
+  const [selectedCode, setSelectedCode] = useState<string>(earlyCodes[0] || '');
+
+  const handleRegenerate = async () => {
+    const runId = (generatedTimetable as any)?.run_id;
+    if (!runId) {
+      navigate('/wizard/step/1');
+      return;
+    }
+    setRegenerating(true);
+    try {
+      await hydrateRunIntoWizard(runId, 'college');
+      navigate('/wizard/step/1');
+    } catch {
+      toast.error('Could not load saved inputs — opening the wizard with current data.');
+      navigate('/wizard/step/1');
+    } finally {
+      setRegenerating(false);
+    }
+  };
 
   if (!generatedTimetable) {
     return (
@@ -39,12 +68,15 @@ const CollegeTimetableGrid: React.FC = () => {
   } = generatedTimetable as any;
 
   const lunchPeriod: number = lunch_period_index >= 0 ? lunch_period_index + 1 : -1;
-  const allCodes = [...new Set((assignments as any[]).map((a: any) => a.subject_code))].sort() as string[];
+  const allCodes = earlyCodes;
   const codeColor = buildSubjectColor(allCodes);
   const hasLab = (assignments as any[]).some((a: any) => a.course_type === 'lab');
 
-  const [selectedCode, setSelectedCode] = useState<string>(allCodes[0] || '');
-  const currentCode = selectedCode;
+  // selectedCode's initializer ran on first render when earlyCodes may have
+  // been empty. Resolve a sane current value at render time.
+  const currentCode = (selectedCode && allCodes.includes(selectedCode))
+    ? selectedCode
+    : (allCodes[0] || '');
 
   const periods = (time_slots as any[]).map((s: any, i: number) => ({ period: i + 1, ...s }));
   const errors   = (warnings as any[]).filter((w: any) => w.level === 'error');
@@ -157,7 +189,9 @@ const CollegeTimetableGrid: React.FC = () => {
 
         {/* Action row */}
         <div className="flex items-center justify-between">
-          <Btn variant="ghost" size="sm" onClick={() => navigate('/wizard')}>← Regenerate</Btn>
+          <Btn variant="ghost" size="sm" disabled={regenerating} onClick={handleRegenerate}>
+            {regenerating ? 'Loading…' : '← Regenerate'}
+          </Btn>
         </div>
       </div>
     </div>
