@@ -12,6 +12,7 @@ const TimetableRouter: React.FC = () => {
 };
 
 import LandingPage from './components/landing/LandingPage';
+import DocsPage from './components/docs/DocsPage';
 import AppShell from './components/layout/AppShell';
 import DashboardPage from './components/dashboard/DashboardPage';
 
@@ -39,6 +40,7 @@ function App() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<LandingPage />} />
+        <Route path="/docs" element={<DocsPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
