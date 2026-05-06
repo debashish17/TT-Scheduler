@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
 import { useWizardStore } from '../wizard/wizardStore';
@@ -17,10 +17,177 @@ const EXAMPLES = [
   'Primary school with 4 sections for Grade 5. Subjects: English, Hindi, Math, Science, Social Studies, Art. 6 periods/day, Mon–Sat.',
 ];
 
+// ─── AI-output adapters ───────────────────────────────────────────────────────
+// The AI prompt asks for wizard-exact shapes, but model drift happens. These
+// adapters normalize whatever we get into the shapes the wizard stores expect.
+
+const DAY_FULL: Record<string, string> = {
+  mon: 'Monday', monday: 'Monday',
+  tue: 'Tuesday', tues: 'Tuesday', tuesday: 'Tuesday',
+  wed: 'Wednesday', weds: 'Wednesday', wednesday: 'Wednesday',
+  thu: 'Thursday', thur: 'Thursday', thurs: 'Thursday', thursday: 'Thursday',
+  fri: 'Friday', friday: 'Friday',
+  sat: 'Saturday', saturday: 'Saturday',
+  sun: 'Sunday', sunday: 'Sunday',
+};
+
+const normalizeDays = (days: any): string[] => {
+  if (!Array.isArray(days)) return ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  return days.map(d => DAY_FULL[String(d).trim().toLowerCase()] || d);
+};
+
+/** Convert AI's school time_data into the shape Step5Schedule expects. */
+const adaptSchoolTimeData = (raw: any): any => {
+  if (!raw || typeof raw !== 'object') return null;
+  const periodsPerDay = raw.periodsPerDay ?? raw.periods_per_day ?? 7;
+  const periodDuration = raw.periodDuration
+    ?? raw.period_duration
+    ?? raw.periodDurationMinutes
+    ?? raw.period_duration_minutes
+    ?? 45;
+  // Lunch — accept lunchAfterPeriod (1-based) OR lunchPeriodIndex (0-based).
+  let lunchAfterPeriod: number;
+  if (raw.lunchAfterPeriod != null) {
+    lunchAfterPeriod = Number(raw.lunchAfterPeriod);
+  } else if (raw.lunch_after_period != null) {
+    lunchAfterPeriod = Number(raw.lunch_after_period);
+  } else if (raw.lunchPeriodIndex != null) {
+    lunchAfterPeriod = Number(raw.lunchPeriodIndex) + 1; // 0-based → 1-based
+  } else {
+    lunchAfterPeriod = 4;
+  }
+  const lunchDuration = raw.lunchDuration
+    ?? raw.lunch_duration
+    ?? raw.lunchDurationMinutes
+    ?? raw.lunch_duration_minutes
+    ?? 30;
+  const haslunch = raw.haslunch ?? raw.hasLunch ?? (lunchAfterPeriod > 0 && lunchDuration > 0);
+  const out = {
+    workingDays: normalizeDays(raw.workingDays ?? raw.working_days),
+    startTime: raw.startTime ?? raw.start_time ?? '08:00',
+    periodDuration: Number(periodDuration),
+    periodsPerDay: Number(periodsPerDay),
+    lunchAfterPeriod: Number(lunchAfterPeriod),
+    lunchDuration: Number(lunchDuration),
+    haslunch: Boolean(haslunch),
+  };
+  // Step5Schedule's workflow heuristic classifies a payload as "school" only
+  // when `startTime === '08:30'` OR `periodDuration === 45`. If neither matches,
+  // it resets the data to school defaults (clobbering AI's other values).
+  // Snap periodDuration so the heuristic stays satisfied without changing the
+  // AI's intent for periods, lunch, or working days.
+  if (out.startTime !== '08:30' && out.periodDuration !== 45) {
+    out.periodDuration = 45;
+  }
+  return out;
+};
+
+/** Convert AI's college_schedule into the shape CollegeStep5Schedule expects. */
+const adaptCollegeSchedule = (raw: any): any => {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    workingDays: normalizeDays(raw.workingDays ?? raw.working_days),
+    periodsPerDay: Number(raw.periodsPerDay ?? raw.periods_per_day ?? 6),
+    periodDurationMinutes: Number(
+      raw.periodDurationMinutes
+      ?? raw.period_duration_minutes
+      ?? raw.periodDuration
+      ?? raw.period_duration
+      ?? 60
+    ),
+    startTime: raw.startTime ?? raw.start_time ?? '08:00',
+    lunchPeriodIndex: Number(raw.lunchPeriodIndex ?? raw.lunch_period_index ?? 3),
+  };
+};
+
+/**
+ * Ensure each subject has `target_classes`. If the AI inverted the mapping
+ * (put `subjects` on classes_data instead), reconstruct it. Final fallback:
+ * give every subject every class.
+ */
+const adaptSchoolSubjects = (subjects: any[], classes: any[]): any[] => {
+  if (!Array.isArray(subjects)) return [];
+  const allClassNames = Array.isArray(classes)
+    ? classes.map(c => c?.name).filter(Boolean)
+    : [];
+  // Build inverted map: subject_code -> [class_names] from classes_data[].subjects
+  const invertedMap: Record<string, string[]> = {};
+  if (Array.isArray(classes)) {
+    for (const c of classes) {
+      if (!c?.name || !Array.isArray(c.subjects)) continue;
+      for (const subjCode of c.subjects) {
+        if (!invertedMap[subjCode]) invertedMap[subjCode] = [];
+        invertedMap[subjCode].push(c.name);
+      }
+    }
+  }
+  return subjects.map(s => {
+    const existing = Array.isArray(s.target_classes) ? s.target_classes : null;
+    const inverted = invertedMap[s.code];
+    return {
+      name: s.name,
+      code: s.code,
+      periods_per_week: Number(s.periods_per_week ?? s.periodsPerWeek ?? 3),
+      target_classes: existing && existing.length > 0
+        ? existing
+        : (inverted && inverted.length > 0 ? inverted : allClassNames),
+    };
+  });
+};
+
+/** Strip any `subjects` field from class entries; the wizard doesn't use it. */
+const adaptSchoolClasses = (classes: any[]): any[] => {
+  if (!Array.isArray(classes)) return [];
+  return classes.map(c => ({
+    name: c.name,
+    size: Number(c.size ?? 30),
+  }));
+};
+
+/** Strip teacher.code (wizard doesn't store it); keep name + subjects. */
+const adaptSchoolTeachers = (teachers: any[]): any[] => {
+  if (!Array.isArray(teachers)) return [];
+  return teachers.map(t => ({
+    name: t.name,
+    subjects: Array.isArray(t.subjects) ? t.subjects : [],
+  }));
+};
+
+/** Rooms: coerce capacity to number and drop the `type` field if present. */
+const adaptSchoolRooms = (rooms: any[]): any[] => {
+  if (!Array.isArray(rooms)) return [];
+  return rooms.map(r => ({
+    name: r.name,
+    capacity: Number(r.capacity ?? 40),
+  }));
+};
+
+/** Map school constraints to the keys Step6Constraints expects. */
+const adaptSchoolConstraints = (raw: any): any => {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    max_consecutive_periods: Number(
+      raw.max_consecutive_periods ?? raw.maxConsecutivePeriods ?? 3
+    ),
+    max_periods_per_day_per_teacher: Number(
+      raw.max_periods_per_day_per_teacher ?? raw.maxPeriodsPerDayPerTeacher ?? 6
+    ),
+  };
+};
+
 const AIDraftModal: React.FC<AIDraftModalProps> = ({ open, onClose }) => {
   const navigate = useNavigate();
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Scroll the page to the top when the modal opens, so the modal (anchored
+  // near the viewport top via pt-[10vh]) is always visible regardless of
+  // where the user was scrolled on the underlying page.
+  useEffect(() => {
+    if (open) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [open]);
 
   const {
     clearOnboardingData,
@@ -59,15 +226,32 @@ const AIDraftModal: React.FC<AIDraftModalProps> = ({ open, onClose }) => {
         if (data.course_offerings)     setCourseOfferings(data.course_offerings);
         if (data.college_faculty)      setCollegeFaculty(data.college_faculty);
         if (data.college_rooms)        setCollegeRooms(data.college_rooms);
-        if (data.college_schedule)     setCollegeSchedule(data.college_schedule);
+        const schedule = adaptCollegeSchedule(data.college_schedule);
+        if (schedule)                  setCollegeSchedule(schedule);
         if (data.college_constraints)  setCollegeConstraints(data.college_constraints);
       } else {
-        if (data.classes_data)      setClassesData(data.classes_data);
-        if (data.subjects_data)     setSubjectsData(data.subjects_data);
-        if (data.teachers_data)     setTeachersData(data.teachers_data);
-        if (data.time_data)         setTimeData(data.time_data);
-        if (data.rooms_data)        setRoomsData(data.rooms_data);
-        if (data.constraints_data)  setConstraintsData(data.constraints_data);
+        // Run adapters so the AI's output works regardless of minor key drift.
+        const classes  = adaptSchoolClasses(data.classes_data);
+        const subjects = adaptSchoolSubjects(data.subjects_data, data.classes_data);
+        const teachers = adaptSchoolTeachers(data.teachers_data);
+        const rooms    = adaptSchoolRooms(data.rooms_data);
+        const time     = adaptSchoolTimeData(data.time_data);
+        const constr   = adaptSchoolConstraints(data.constraints_data);
+        if (classes.length)   setClassesData(classes);
+        if (subjects.length)  setSubjectsData(subjects);
+        if (teachers.length)  setTeachersData(teachers);
+        if (rooms.length)     setRoomsData(rooms);
+        if (time)             setTimeData(time);
+        if (constr)           setConstraintsData(constr);
+
+        // Sanity warning if the AI returned subjects but we couldn't map any
+        // to classes — wizard would render but the solver later would schedule nothing.
+        const mappedAny = subjects.some((s: any) =>
+          Array.isArray(s.target_classes) && s.target_classes.length > 0
+        );
+        if (subjects.length > 0 && !mappedAny) {
+          console.warn('[AI draft] No subject→class mapping inferred; using all classes for every subject.');
+        }
       }
 
       toast.success('Draft ready — review and adjust in the wizard', { id: tid });
@@ -85,7 +269,7 @@ const AIDraftModal: React.FC<AIDraftModalProps> = ({ open, onClose }) => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] pb-8 overflow-y-auto"
       style={{ background: 'rgba(0,0,0,0.5)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >

@@ -1,22 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { snapshotsAPI } from '../../api/client';
+import { runsAPI, schoolAPI, collegeAPI } from '../../api/client';
 import { useOnboardingStore } from '../../store';
 import { useWizardStore } from '../wizard/wizardStore';
 import { Btn, Chip, Dot, Icon, TopBar } from '../ui/primitives';
+import { hydrateRunIntoWizard } from './hydrateRunIntoWizard';
 import toast from 'react-hot-toast';
 
-interface SnapshotSummary {
+interface RunSummary {
   id: string;
-  institution_name: string;
-  created_at: string | null;
+  kind: 'school' | 'college';
+  name: string;
+  status: string;
   solver: string;
-  total_assignments: number;
-  solve_time: string;
-  subjects_count: number;
-  teachers_count: number;
-  rooms_count: number;
-  classes_count: number;
+  solve_time_seconds?: number | null;
+  parent_run_id?: string | null;
+  created_at: string | null;
+  // Aggregate counts from backend
+  assignments_count?: number;
+  subjects_count?: number;   // subjects (school) or courses (college)
+  teachers_count?: number;   // teachers (school) or faculty (college)
+  classes_count?: number;    // classes (school) or sections (college)
+  rooms_count?: number;
+  students_count?: number;   // sum of class sizes (school) or course enrolments (college)
+  // Aliased for display convenience
+  institution_name?: string;
+}
+
+/** Strip the " timetable" suffix the backend appends by default. */
+function displayName(name: string | undefined): string {
+  if (!name) return 'Untitled';
+  return name.replace(/\s+timetable\s*$/i, '').trim() || name;
 }
 
 function toUtc(iso: string): string {
@@ -45,14 +59,10 @@ function relativeTime(iso: string | null): string {
 const TimetableHistory: React.FC = () => {
   const navigate = useNavigate();
   const {
-    setInstitutionData, setClassesData, setSubjectsData, setTeachersData,
-    setTimeData, setRoomsData, setConstraintsData, setGeneratedTimetable,
-    clearOnboardingData,
-    setCollegeInstitution, setCourseOfferings, setCollegeFaculty,
-    setCollegeSchedule, setCollegeRooms, setCollegeConstraints,
+    setInstitutionData, setGeneratedTimetable, clearOnboardingData,
   } = useOnboardingStore();
 
-  const [snapshots,    setSnapshots]   = useState<SnapshotSummary[]>([]);
+  const [snapshots,    setSnapshots]   = useState<RunSummary[]>([]);
   const [loading,      setLoading]     = useState(true);
   const [loadingId,    setLoadingId]   = useState<string | null>(null);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -61,8 +71,10 @@ const TimetableHistory: React.FC = () => {
 
   const fetchHistory = () => {
     setLoading(true); setError(null);
-    snapshotsAPI.getHistory()
-      .then(r => setSnapshots(r.data.snapshots || []))
+    runsAPI.list()
+      .then(r => {
+        setSnapshots((r.data.runs || []) as RunSummary[]);
+      })
       .catch(e => setError(e.response?.data?.detail || 'Cannot reach the backend.'))
       .finally(() => setLoading(false));
   };
@@ -72,69 +84,53 @@ const TimetableHistory: React.FC = () => {
   const handleLoad = async (id: string) => {
     setLoadingId(id);
     try {
-      const res = await snapshotsAPI.getById(id);
-      if (!res.data.found) { toast.error('Snapshot not found.'); return; }
-      const snap = res.data.snapshot;
-      setInstitutionData(snap.institution_data  || null);
-      setClassesData(    snap.classes_data       || []);
-      setSubjectsData(   snap.subjects_data      || []);
-      setTeachersData(   snap.teachers_data      || []);
-      setTimeData(       snap.time_data          || null);
-      setRoomsData(      snap.rooms_data         || []);
-      setConstraintsData(snap.constraints_data   || null);
-      setGeneratedTimetable(snap.generated_timetable || null);
-      toast.success(`Loaded "${snap.institution_name}"`);
+      const runMeta = snapshots.find(s => s.id === id);
+      const runKind: 'school' | 'college' = runMeta?.kind ?? 'school';
+
+      // Fetch the full solver-shaped result so the timetable view can render
+      // without re-running the solver.
+      const resultRes = runKind === 'college'
+        ? await collegeAPI.getRunResult(id)
+        : await schoolAPI.getRunResult(id);
+      const result = resultRes.data;
+
+      // Set the institution name (for headers in the timetable view) and the
+      // generated timetable in the store. Don't touch the wizard data — the
+      // user is viewing a saved run, not editing inputs.
+      const instName = displayName(runMeta?.name);
+      setInstitutionData(instName !== 'Untitled' ? { name: instName } : null);
+      setGeneratedTimetable(result);
+      useWizardStore.getState().setWorkflow(runKind);
+
+      toast.success(`Loaded "${instName}"`);
       navigate('/timetable');
-    } catch { toast.error('Failed to load snapshot.');
+    } catch { toast.error('Failed to load timetable.');
     } finally { setLoadingId(null); }
   };
 
   const handleDuplicate = async (id: string) => {
     setDuplicatingId(id);
     try {
-      const res = await snapshotsAPI.getById(id);
-      if (!res.data.found) { toast.error('Snapshot not found.'); return; }
-      const snap = res.data.snapshot;
-      // Determine workflow from snapshot before hydrating, so we set the right fields
-      const snapshotWorkflow: 'school' | 'college' =
-        snap.institution_data?.workflow ||
-        (['college', 'university', 'engineering institute', 'management institute']
-          .some(k => (snap.institution_data?.type ?? '').toLowerCase().includes(k))
-          ? 'college' : 'school');
-
-      // Always set the generic fields (used by school steps + snapshot restore)
-      setInstitutionData(snap.institution_data  || null);
-      setClassesData(    snap.classes_data       || []);
-      setSubjectsData(   snap.subjects_data      || []);
-      setTeachersData(   snap.teachers_data      || []);
-      setTimeData(       snap.time_data          || null);
-      setRoomsData(      snap.rooms_data         || []);
-      setConstraintsData(snap.constraints_data   || null);
-
-      // College steps read from separate store fields — populate them for college runs
-      if (snapshotWorkflow === 'college') {
-        setCollegeInstitution(snap.institution_data  || null);
-        setCourseOfferings(   snap.subjects_data      || []);
-        setCollegeFaculty(    snap.teachers_data      || []);
-        setCollegeSchedule(   snap.time_data          || null);
-        setCollegeRooms(      snap.rooms_data         || []);
-        setCollegeConstraints(snap.constraints_data   || null);
-      }
-
-      // Do not restore the generated timetable — user is duplicating to re-run
-      useWizardStore.getState().setWorkflow(snapshotWorkflow);
-      toast.success(`Duplicated "${snap.institution_name}" — adjust and re-generate`);
+      const runMeta = snapshots.find(s => s.id === id);
+      const runKind: 'school' | 'college' = runMeta?.kind ?? 'school';
+      const { institutionName } = await hydrateRunIntoWizard(id, runKind);
+      toast.success(`Duplicated "${institutionName}" — adjust and re-generate`);
       navigate('/wizard/step/1');
-    } catch { toast.error('Failed to duplicate snapshot.');
+    } catch { toast.error('Failed to duplicate run.');
     } finally { setDuplicatingId(null); }
   };
 
   const handleDelete = async (id: string) => {
     try {
-      await snapshotsAPI.delete(id);
+      const runMeta = snapshots.find(s => s.id === id);
+      if (runMeta?.kind === 'college') {
+        await collegeAPI.deleteRun(id);
+      } else {
+        await schoolAPI.deleteRun(id);
+      }
       toast.success('Timetable deleted');
       const storeState = useOnboardingStore.getState();
-      if (storeState.generatedTimetable && (storeState.generatedTimetable as any).id === id) {
+      if (storeState.generatedTimetable && (storeState.generatedTimetable as any).run_id === id) {
         clearOnboardingData();
       }
       fetchHistory();
@@ -216,24 +212,27 @@ const TimetableHistory: React.FC = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <h3 className="font-semibold truncate">
-                        {snap.institution_name || 'Untitled'}
+                        {displayName(snap.name)}
                       </h3>
                       {idx === 0 && <Chip tone="ok"><Dot color="var(--ok)" /> latest</Chip>}
                       {snap.solver && (
                         <Chip tone="neutral">{snap.solver}</Chip>
+                      )}
+                      {snap.kind && (
+                        <Chip tone="neutral">{snap.kind}</Chip>
                       )}
                     </div>
                     <p className="text-[12px] mono mb-4" style={{ color: 'var(--ink-3)' }}>
                       {formatDate(snap.created_at)} · {relativeTime(snap.created_at)}
                     </p>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                       {[
-                        { label: 'Assignments', v: snap.total_assignments },
-                        { label: 'Solve time',  v: snap.solve_time ? `${parseFloat(snap.solve_time).toFixed(1)}s` : '—' },
-                        { label: 'Subjects',    v: snap.subjects_count },
-                        { label: 'Teachers',    v: snap.teachers_count },
-                        { label: 'Rooms',       v: snap.rooms_count },
+                        { label: 'Assignments', v: snap.assignments_count ?? '—' },
+                        { label: 'Solve time',  v: snap.solve_time_seconds != null ? `${snap.solve_time_seconds.toFixed(1)}s` : '—' },
+                        { label: snap.kind === 'college' ? 'Courses' : 'Subjects', v: snap.subjects_count ?? '—' },
+                        { label: snap.kind === 'college' ? 'Faculty' : 'Teachers', v: snap.teachers_count ?? '—' },
+                        { label: 'Rooms', v: snap.rooms_count ?? '—' },
                       ].map(s => (
                         <div key={s.label} className="rounded-lg p-3 text-center"
                           style={{ background: 'var(--paper-2)' }}>

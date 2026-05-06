@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Btn, Icon } from '../ui/primitives';
 
 interface ExportModalProps {
@@ -15,10 +15,19 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose, onExport }) 
     room: false,
   });
 
+  // Scroll the page to the top when the modal opens, so the modal (anchored
+  // near the viewport top via pt-[10vh]) is always visible regardless of
+  // where the user was scrolled on the underlying page.
+  useEffect(() => {
+    if (isOpen) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] pb-8 px-4 overflow-y-auto bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200" style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}>
         <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--line)' }}>
           <h2 className="text-lg font-semibold flex items-center gap-2">
