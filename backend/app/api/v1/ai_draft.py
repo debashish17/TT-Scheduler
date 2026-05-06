@@ -49,37 +49,53 @@ SCHOOL SCHEMA  (type = "school")
     "academic_year": "2025-26"
   },
   "classes_data": [
-    { "name": "string", "size": <number>, "subjects": ["SUBJ_CODE", ...] }
+    { "name": "string", "size": <number> }
   ],
   "subjects_data": [
-    { "code": "SUBJ_CODE", "name": "string", "periods_per_week": <number>, "type": "lecture" | "lab" }
+    {
+      "code": "SUBJ_CODE",
+      "name": "string",
+      "periods_per_week": <number>,
+      "target_classes": ["10A", "10B"]
+    }
   ],
   "teachers_data": [
-    { "name": "string", "code": "T001", "subjects": ["SUBJ_CODE", ...] }
+    { "name": "string", "subjects": ["SUBJ_CODE", ...] }
   ],
   "time_data": {
-    "workingDays": ["Mon", "Tue", "Wed", "Thu", "Fri"],
+    "workingDays": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
     "periodsPerDay": <number>,
     "startTime": "08:00",
-    "periodDurationMinutes": 50,
-    "lunchPeriodIndex": <0-based index>
+    "periodDuration": 45,
+    "lunchAfterPeriod": <1-based period number, e.g. 4 means lunch after period 4>,
+    "lunchDuration": <minutes, e.g. 30>,
+    "haslunch": true
   },
   "rooms_data": [
-    { "name": "string", "capacity": <number>, "type": "classroom" | "lab" }
+    { "name": "string", "capacity": <number> }
   ],
   "constraints_data": {
-    "maxPeriodsPerDayPerTeacher": 5,
-    "avoidConsecutiveSameSubject": true
+    "max_consecutive_periods": 3,
+    "max_periods_per_day_per_teacher": 6
   }
 }
 
 School rules:
-- workingDays uses short names: "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun".
-- periodsPerDay defaults to 7; lunchPeriodIndex defaults to 4 (0-based, i.e. 5th period).
+- workingDays uses FULL names: "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday".
+- periodsPerDay defaults to 7; periodDuration defaults to 45 (minutes).
+- lunchAfterPeriod is 1-BASED (the period number after which lunch is inserted).
+  Default: lunchAfterPeriod=4, lunchDuration=30, haslunch=true.
+  If the user explicitly says "no lunch break", set haslunch=false and lunchAfterPeriod=0.
 - Subject codes: short UPPERCASE (MATH, ENG, SCI, HIS, PE, ART …).
-- Teacher codes: T001, T002, …
-- Distribute subjects evenly among teachers.
-- Every class lists all subject codes it attends.
+- target_classes on each subject: list of class names (matching classes_data[].name) that take this subject.
+  Most schools have all classes take all subjects, so set target_classes to all class names.
+- Distribute subjects evenly among teachers; teacher.subjects holds subject codes.
+- DO NOT include "subjects" inside classes_data items — class→subject mapping lives on subjects_data[].target_classes.
+- Room names: use simple, school-appropriate labels like "Room 101", "Room 102", "Room 201",
+  or "Class 1", "Class 2". DO NOT use "Lecture Hall", "Seminar Room", "CS Lab",
+  "Computer Lab" or any other college-/university-flavored room name —
+  those are reserved for the COLLEGE schema below.
+- Room capacity should be ≥ the largest class size (typically 35–50).
 
 ══════════════════════════════════════════════════════
 COLLEGE SCHEMA  (type = "college")

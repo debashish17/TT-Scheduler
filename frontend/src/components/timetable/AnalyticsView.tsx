@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOnboardingStore } from '../../store';
-import { simpleTimetableAPI } from '../../api/client';
+import { schoolAPI } from '../../api/client';
+// TODO: AnalyticsView gets analytics for whatever timetable is in the store.
+// It defaults to schoolAPI.getAnalytics. If the active run was a college run,
+// this will hit the wrong endpoint. A future improvement is to pass the run kind
+// down via props or read it from the store (the run_id + kind could be stored after generate).
 import { Btn, Eyebrow, Icon, TopBar } from '../ui/primitives';
 import toast from 'react-hot-toast';
 import { exportAllViewsToExcel, exportSelectedPDFs } from '../../utils/exportHelpers';
@@ -82,7 +86,7 @@ const AnalyticsView: React.FC = () => {
   useEffect(() => {
     if (!generatedTimetable) return;
     setLoading(true);
-    simpleTimetableAPI.getAnalytics(generatedTimetable)
+    schoolAPI.getAnalytics(generatedTimetable)
       .then(res => setAnalytics(res.data))
       .catch(() => setAnalytics(computeLocalAnalytics(generatedTimetable)))
       .finally(() => setLoading(false));

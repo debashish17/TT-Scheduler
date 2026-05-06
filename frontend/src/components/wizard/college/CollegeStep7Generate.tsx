@@ -4,7 +4,7 @@ import { WizardShell } from '../WizardShell';
 import { useWizardStore } from '../wizardStore';
 import { useOnboardingStore } from '../../../store';
 import { Btn, Eyebrow, Chip, Icon } from '../../ui/primitives';
-import { simpleTimetableAPI, snapshotsAPI } from '../../../api/client';
+import { collegeAPI } from '../../../api/client';
 
 // ─── Types ───────────────────────────────────────────────────────
 interface PreflightCheck {
@@ -430,7 +430,7 @@ const CollegeStep7Generate: React.FC = () => {
         setSolveProgress(p);
       }, 150);
 
-      const response = await simpleTimetableAPI.generateCollege(request);
+      const response = await collegeAPI.generate(request);
       clearInterval(progressTick);
       setSolveProgress(1);
 
@@ -466,40 +466,10 @@ const CollegeStep7Generate: React.FC = () => {
         }
       }
 
-      // Auto-save (non-blocking)
-      const isPrecheck = timetableData.solver === 'Precheck' || !timetableData.assignments;
-      if (!isPrecheck) {
-        try {
-          simpleTimetableAPI.saveTimetable({
-            institution_name: request.institution_name,
-            name: `${request.institution_name} Timetable`,
-            solver: timetableData.solver || 'CP-SAT',
-            status: timetableData.status || 'FEASIBLE',
-            solve_time: timetableData.solve_time || 0,
-            assignments: timetableData.assignments || [],
-            working_days: request.working_days,
-            periods_per_day: request.periods_per_day,
-            stats: timetableData.stats || {},
-          });
-        } catch (saveErr: any) {
-          console.warn('Auto-save warning:', saveErr.message);
-        }
-
-        try {
-          snapshotsAPI.save({
-            institution_name: request.institution_name,
-            institution_data: collegeInstitution || {},
-            classes_data: courseOfferings || [],
-            subjects_data: courseOfferings || [],
-            teachers_data: collegeFaculty || [],
-            time_data: collegeSchedule || {},
-            rooms_data: collegeRooms || [],
-            constraints_data: collegeConstraints || {},
-            generated_timetable: timetableData,
-          });
-        } catch (snapErr: any) {
-          console.warn('Snapshot save warning:', snapErr.message);
-        }
+      // Auto-save is built into /college/generate — run_id is returned in timetableData.
+      // No separate save call needed.
+      if (timetableData.run_id) {
+        console.log(`Run saved automatically: ${timetableData.run_id}`);
       }
 
     } catch (err: any) {
