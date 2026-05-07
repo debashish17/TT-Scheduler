@@ -1,6 +1,6 @@
 # TT-Scheduler — User Manual
 
-> **Version:** 1.0 &nbsp;|&nbsp; **Last Updated:** April 2026
+> **Version:** 1.1 &nbsp;|&nbsp; **Last Updated:** May 2026
 > **Live App:** [tt-scheduler.vercel.app](https://tt-scheduler.vercel.app)
 
 ---
@@ -35,12 +35,13 @@
  - 6.3 [Student View](#63-student-view)
  - 6.4 [Analytics View](#64-analytics-view)
 7. [Exporting Your Timetable](#7-exporting-your-timetable)
-8. [Timetable History](#8-timetable-history)
+8. [Timetable History & Duplicate Run](#8-timetable-history--duplicate-run)
 9. [Auto-Resolve (AI Fix)](#9-auto-resolve-ai-fix)
-10. [Constraint Reference](#10-constraint-reference)
-11. [Bulk Import via Excel](#11-bulk-import-via-excel)
-12. [Troubleshooting](#12-troubleshooting)
-13. [FAQ](#13-faq)
+10. [AI Draft — Natural-Language Setup](#10-ai-draft--natural-language-setup)
+11. [Constraint Reference](#11-constraint-reference)
+12. [Bulk Import via Excel](#12-bulk-import-via-excel)
+13. [Troubleshooting](#13-troubleshooting)
+14. [FAQ](#14-faq)
 
 ---
 
@@ -55,9 +56,11 @@
 | **CP-SAT Solver** | 8 hard constraints enforced — zero clash, guaranteed |
 | **7-Step Wizard** | Guided onboarding for both School and College modes |
 | **Per-User Data** | Your inputs and results are saved; pick up where you left off |
-| **History** | Browse, compare, and restore any past timetable |
+| **History & Duplicate** | Browse, restore, or duplicate any past timetable run |
 | **4 Views** | Grid, Faculty, Student, and Analytics views |
 | **Excel Import/Export** | Bulk-load faculty & courses from `.xlsx`; export full timetable |
+| **Google Sign-In** | One-click login via Google OAuth 2.0 or email/password |
+| **AI Draft** | Natural-language prompt to auto-populate wizard inputs |
 | **Secure Auth** | JWT-based login with row-level database security |
 
 ---
@@ -78,11 +81,26 @@
 
 ### 2.2 Logging In
 
+![Login page — Email/Password and Google OAuth Sign-In options](docs/screenshots/11_google_signin.png)
+
+TT-Scheduler supports two sign-in methods:
+
+#### Option A — Email & Password
+
 1. Go to [tt-scheduler.vercel.app/login](https://tt-scheduler.vercel.app/login).
 2. Enter your registered **email** and **password**.
 3. Click **Log in**.
 
-**Session restoration:** When you log back in, TT-Scheduler automatically restores your last saved state (inputs, generated timetable, etc.) so you can continue exactly where you left off — even from a different device.
+#### Option B — Google Sign-In (OAuth 2.0)
+
+1. On the login page, click **"Continue with Google"**.
+2. Select your Google account from the browser popup.
+3. Grant the requested permissions — TT-Scheduler only reads your name and email.
+4. You are signed in and redirected to the Dashboard immediately.
+
+> **Note:** Google Sign-In creates an account automatically on first use. No password setup is required — just click "Continue with Google" every time.
+
+**Session restoration:** When you log back in (by either method), TT-Scheduler automatically restores your last saved state (inputs, generated timetable, etc.) so you can continue exactly where you left off — even from a different device.
 
 ---
 
@@ -463,7 +481,7 @@ The exported `.xlsx` file contains **three sheets** accessible via tabs at the b
 
 ---
 
-## 8. Timetable History
+## 8. Timetable History & Duplicate Run
 
 Every successfully generated timetable is **automatically saved** to your account.
 
@@ -471,15 +489,30 @@ Access it via:
 - **Dashboard → "View History"** button, or
 - **Sidebar → History** icon
 
+![Timetable History page — run cards with Duplicate and Load actions](docs/screenshots/10_timetable_history.png)
+
 ### History page features
 
 | Feature | How to use |
 |---|---|
 | **Browse** | Scroll through all past timetable runs, ordered newest first |
-| **Preview** | Click any entry to see a compact grid preview |
-| **Restore** | Click **"Restore"** to reload that timetable's full setup and result |
+| **Preview** | Click any run card to see a compact grid preview inline |
+| **Load** | Click **"Load"** to open that timetable's full result in the viewer |
+| **Duplicate Run** | Click **"Duplicate"** on any run card to clone its full input configuration into a new session, ready to tweak and re-generate |
 | **Compare** | Use **"Compare"** to open two timetables side by side |
-| **Delete** | Click the ** Delete** icon; confirm the prompt to permanently remove a snapshot |
+| **Delete** | Click the **Delete** icon; confirm the prompt to permanently remove a snapshot |
+
+### Duplicate Run — detailed steps
+
+The **Duplicate Run** feature is the fastest way to iterate on an existing timetable without starting from scratch:
+
+1. Open **History** from the Dashboard or sidebar.
+2. Find the run you want to use as a base and click **"Duplicate"**.
+3. TT-Scheduler clones the full input state — institution name, all classes, subjects, teachers, rooms, schedule settings, and soft preferences — into a new wizard session.
+4. The wizard opens at **Step 1** with all data pre-filled.
+5. Make whatever changes you need (add a teacher, change periods, adjust constraints).
+6. Click **Generate** in Step 7 to produce a new timetable.
+7. Both the original and the new run are saved independently in History.
 
 > **Restore** loads the timetable's **full input state** as well (teachers, subjects, rooms, schedule settings). This lets you tweak inputs and re-generate from a historical baseline.
 
@@ -515,7 +548,44 @@ After a successful re-generation, a **Rename prompt** may appear if placeholder 
 
 ---
 
-## 10. Constraint Reference
+## 10. AI Draft — Natural-Language Setup
+
+The **AI Draft** feature lets you describe your institution in plain English and have TT-Scheduler automatically populate the wizard inputs for you — no manual data entry required.
+
+![AI Draft modal — natural-language prompt interface powered by Claude Haiku](docs/screenshots/12_ai_draft.png)
+
+### How AI Draft works
+
+1. From the **Dashboard** or the workflow selector, click **"AI Draft"** (or the sparkle icon).
+2. The AI Draft modal opens with a text input area.
+3. Type a free-form description of your institution. Include as much detail as you have:
+
+> *"My school has 4 classes: Grade 10-A, 10-B, 11-A, 11-B. Each class has 35 students. Subjects are Mathematics (5 periods/week), English (4), Science (4), History (3), and PE (2). Teachers: Mr. Kumar teaches Math and Science; Ms. Patel teaches English and History; Mr. Roy teaches PE. School runs Mon–Fri, 8:00 AM start, 45-minute periods, 7 periods per day, lunch after period 4."*
+
+4. Click **"Generate Draft"**. The AI (powered by Claude Haiku) interprets your description and fills in:
+ - Institution name and type
+ - Classes/batches with enrollment
+ - All subjects with periods-per-week and class assignments
+ - Teachers with their qualified subjects
+ - Schedule settings (days, start time, period length, lunch)
+5. Review the pre-filled wizard — all steps will be populated.
+6. Correct any field the AI may have misunderstood, then proceed through the wizard normally.
+
+### Tips for best results
+
+| What to include | Example |
+|---|---|
+| **Number of classes and names** | "3 sections: CSE-A, CSE-B, CSE-C" |
+| **Subjects with weekly frequency** | "Data Structures — 3 hours/week" |
+| **Teacher–subject assignments** | "Dr. Rao teaches DS and Algorithms" |
+| **Schedule details** | "9:00 AM start, 50-minute periods, Mon–Sat" |
+| **Special rooms** | "1 computer lab (30 seats), 2 lecture halls (60 seats)" |
+
+> **Note:** AI Draft is an assistant, not a replacement for review. Always verify the populated inputs before generating, especially subject codes and teacher assignments.
+
+---
+
+## 11. Constraint Reference
 
 ### Hard Constraints
 
@@ -548,9 +618,22 @@ These are hints. The solver gives penalty scores to violations but still produce
 
 ---
 
-## 11. Bulk Import via Excel
+## 12. Bulk Import via Excel
 
-TT-Scheduler supports importing **faculty** and **courses/subjects** from Excel spreadsheets.
+TT-Scheduler supports importing **faculty** and **courses/subjects** from Excel spreadsheets — ideal for institutions with large rosters that would be tedious to enter manually.
+
+![Excel Import modal — file upload and template download for College mode](docs/screenshots/09_excel_import.png)
+
+### Accessing the Import Modal
+
+The **Import from Excel** button appears in two wizard steps:
+- **Step 3 (Subjects / Courses)** — import subject or course definitions
+- **Step 4 (Teachers / Faculty)** — import staff and their qualified subjects
+
+Click the button to open the Import modal shown above. From there you can:
+- **Download a template** — get a pre-formatted `.xlsx` file with the correct column headers
+- **Upload your file** — drag-and-drop or click to browse for your prepared spreadsheet
+- **Preview imported rows** — the modal shows a live preview before you confirm
 
 ### Faculty import template
 
@@ -558,30 +641,34 @@ Your `.xlsx` file should have the following columns (first row = header):
 
 | Column | Required | Example |
 |---|---|---|
-| `name` | | `Dr. Jane Smith` |
-| `subjects` | | `MATH,PHY` (comma-separated codes) |
-| `max_hours_per_week` | (College only) | `16` |
+| `name` | Yes | `Dr. Jane Smith` |
+| `subjects` | Yes | `MATH,PHY` (comma-separated codes) |
+| `max_hours_per_week` | College only | `16` |
 
 ### Subject/Course import template
 
 | Column | Required | Example |
 |---|---|---|
-| `name` | | `Mathematics` |
-| `code` | | `MATH` |
-| `periods_per_week` | | `5` |
-| `target_classes` | | `10-A,10-B` |
+| `name` | Yes | `Mathematics` |
+| `code` | Yes | `MATH` |
+| `periods_per_week` | Yes | `5` |
+| `target_classes` | School only | `10-A,10-B` |
 
 ### Steps to import
 
-1. Prepare your `.xlsx` file using the columns above.
-2. In the **Teachers** or **Subjects** wizard step, click ** Import from Excel**.
-3. Select your file.
-4. Imported rows appear in the table — review and correct any highlighted errors.
-5. Continue to the next step.
+1. Click **"Download Template"** inside the Import modal to get the correct format.
+2. Fill in your data in the downloaded `.xlsx` file.
+3. Return to the Import modal and click **"Upload File"** (or drag the file into the modal).
+4. Review the preview table — rows with errors are highlighted in red with an explanation.
+5. Fix any errors in your spreadsheet, re-upload if needed.
+6. Click **"Import"** to load the rows into the wizard.
+7. Continue to the next step.
+
+> **Tip:** Use the downloaded template rather than creating a spreadsheet from scratch — it includes column headers in exactly the right format and an example row.
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 ### "No valid subjects found"
 
@@ -636,7 +723,7 @@ Your `.xlsx` file should have the following columns (first row = header):
 
 ---
 
-## 13. FAQ
+## 14. FAQ
 
 **Q: Can I use TT-Scheduler for both a school and a college?**
 A: Yes. You can create separate timetable runs — one using the School workflow and another using the College workflow — all under the same account.
@@ -678,15 +765,10 @@ A: Not currently — each account is independent. Sharing a timetable requires e
 
 ---
 
-*For technical issues or feature requests, open an issue at the [GitHub repository](https://github.com/your-username/TT-Scheduler) or contact the development team.*
+*For technical issues or feature requests, open an issue at the GitHub repository or contact the development team.*
 
 ---
 
-<div align="center">
+Live app : tt-scheduler.vercel.app
 
-**TT-Scheduler** — Conflict-free timetables in seconds.
-Built with Google OR-Tools CP-SAT.
-
-[ Live App](https://tt-scheduler.vercel.app) &nbsp;•&nbsp; [ API Docs](https://tt-scheduler.onrender.com/api/v1/docs)
-
-</div>
+API docs : https://tt-scheduler.onrender.com/api/v1/docs
