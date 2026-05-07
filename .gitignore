@@ -90,6 +90,8 @@ DEPLOYMENT.md
 # External / unrelated PDF documents
 VIT AP Neo Browser User Manual (Lab Systems - Ubuntu).pdf
 *.pdf
+# Allow the app's user manual PDF so Vercel can serve it
+!frontend/public/TT-Scheduler_User_Manual.pdf
 
 generate_pdf.py
 
