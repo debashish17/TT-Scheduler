@@ -1,0 +1,1126 @@
+{
+  "institution_name": "Ryan International School timetable",
+  "name": "Ryan International School timetable",
+  "parent_run_id": null,
+  "subjects": [
+    {
+      "name": "English",
+      "code": "ENG",
+      "periods_per_week": 2,
+      "target_classes": [
+        "Class 7C",
+        "Class 7G",
+        "Class 7F",
+        "Class 7B",
+        "Class 7H",
+        "Class 7E",
+        "Class 7J",
+        "Class 7A",
+        "Class 7I",
+        "Class 7D",
+        "Class 8J",
+        "Class 8D",
+        "Class 8F",
+        "Class 8G",
+        "Class 8E",
+        "Class 8C",
+        "Class 8A",
+        "Class 8H",
+        "Class 8B",
+        "Class 8I",
+        "Class 9H",
+        "Class 9J",
+        "Class 9C",
+        "Class 9G",
+        "Class 9I",
+        "Class 9A",
+        "Class 9B",
+        "Class 9E",
+        "Class 9D",
+        "Class 9F",
+        "Class 10H",
+        "Class 10D",
+        "Class 10F",
+        "Class 10I",
+        "Class 10E",
+        "Class 10A",
+        "Class 10B",
+        "Class 10G",
+        "Class 10C",
+        "Class 10J",
+        "Class 11B",
+        "Class 11A",
+        "Class 11E",
+        "Class 11D",
+        "Class 11C",
+        "Class 12D",
+        "Class 12B",
+        "Class 12C",
+        "Class 12E",
+        "Class 12A"
+      ]
+    },
+    {
+      "name": "Mathematics",
+      "code": "MAT",
+      "periods_per_week": 3,
+      "target_classes": [
+        "Class 7C",
+        "Class 7G",
+        "Class 7F",
+        "Class 7B",
+        "Class 7H",
+        "Class 7E",
+        "Class 7J",
+        "Class 7A",
+        "Class 7I",
+        "Class 7D",
+        "Class 8J",
+        "Class 8D",
+        "Class 8F",
+        "Class 8G",
+        "Class 8E",
+        "Class 8C",
+        "Class 8A",
+        "Class 8H",
+        "Class 8B",
+        "Class 8I",
+        "Class 9H",
+        "Class 9J",
+        "Class 9C",
+        "Class 9G",
+        "Class 9I",
+        "Class 9A",
+        "Class 9B",
+        "Class 9E",
+        "Class 9D",
+        "Class 9F",
+        "Class 10H",
+        "Class 10D",
+        "Class 10F",
+        "Class 10I",
+        "Class 10E",
+        "Class 10A",
+        "Class 10B",
+        "Class 10G",
+        "Class 10C",
+        "Class 10J",
+        "Class 12D",
+        "Class 12B",
+        "Class 12C",
+        "Class 12E",
+        "Class 12A",
+        "Class 11B",
+        "Class 11A",
+        "Class 11E",
+        "Class 11D",
+        "Class 11C"
+      ]
+    },
+    {
+      "name": "Science",
+      "code": "SCI",
+      "periods_per_week": 3,
+      "target_classes": [
+        "Class 7C",
+        "Class 7G",
+        "Class 7F",
+        "Class 7B",
+        "Class 7H",
+        "Class 7E",
+        "Class 7J",
+        "Class 7A",
+        "Class 7I",
+        "Class 7D",
+        "Class 8J",
+        "Class 8D",
+        "Class 8F",
+        "Class 8G",
+        "Class 8E",
+        "Class 8C",
+        "Class 8A",
+        "Class 8H",
+        "Class 8B",
+        "Class 8I",
+        "Class 9H",
+        "Class 9J",
+        "Class 9C",
+        "Class 9G",
+        "Class 9I",
+        "Class 9A",
+        "Class 9B",
+        "Class 9E",
+        "Class 9D",
+        "Class 9F"
+      ]
+    },
+    {
+      "name": "Social Studies",
+      "code": "SST",
+      "periods_per_week": 3,
+      "target_classes": [
+        "Class 7C",
+        "Class 7G",
+        "Class 7F",
+        "Class 7B",
+        "Class 7H",
+        "Class 7E",
+        "Class 7J",
+        "Class 7A",
+        "Class 7I",
+        "Class 7D",
+        "Class 8J",
+        "Class 8D",
+        "Class 8F",
+        "Class 8G",
+        "Class 8E",
+        "Class 8C",
+        "Class 8A",
+        "Class 8H",
+        "Class 8B",
+        "Class 8I",
+        "Class 9H",
+        "Class 9J",
+        "Class 9C",
+        "Class 9G",
+        "Class 9I",
+        "Class 9A",
+        "Class 9B",
+        "Class 9E",
+        "Class 9D",
+        "Class 9F"
+      ]
+    },
+    {
+      "name": "Computer Sc.",
+      "code": "CS",
+      "periods_per_week": 1,
+      "target_classes": [
+        "Class 7C",
+        "Class 7G",
+        "Class 7F",
+        "Class 7B",
+        "Class 7H",
+        "Class 7E",
+        "Class 7J",
+        "Class 7A",
+        "Class 7I",
+        "Class 7D",
+        "Class 8J",
+        "Class 8D",
+        "Class 8F",
+        "Class 8G",
+        "Class 8E",
+        "Class 8C",
+        "Class 8A",
+        "Class 8H",
+        "Class 8B",
+        "Class 8I",
+        "Class 9H",
+        "Class 9J",
+        "Class 9C",
+        "Class 9G",
+        "Class 9I",
+        "Class 9A",
+        "Class 9B",
+        "Class 9E",
+        "Class 9D",
+        "Class 9F",
+        "Class 10H",
+        "Class 10D",
+        "Class 10F",
+        "Class 10I",
+        "Class 10E",
+        "Class 10A",
+        "Class 10B",
+        "Class 10G",
+        "Class 10C",
+        "Class 10J",
+        "Class 11B",
+        "Class 11A",
+        "Class 11E",
+        "Class 11D",
+        "Class 11C",
+        "Class 12D",
+        "Class 12B",
+        "Class 12C",
+        "Class 12E",
+        "Class 12A"
+      ]
+    },
+    {
+      "name": "Phys. Ed.",
+      "code": "PHY",
+      "periods_per_week": 1,
+      "target_classes": [
+        "Class 7C",
+        "Class 7G",
+        "Class 7F",
+        "Class 7B",
+        "Class 7H",
+        "Class 7E",
+        "Class 7J",
+        "Class 7A",
+        "Class 7I",
+        "Class 7D",
+        "Class 8J",
+        "Class 8D",
+        "Class 8F",
+        "Class 8G",
+        "Class 8E",
+        "Class 8C",
+        "Class 8A",
+        "Class 8H",
+        "Class 8B",
+        "Class 8I",
+        "Class 9H",
+        "Class 9J",
+        "Class 9C",
+        "Class 9G",
+        "Class 9I",
+        "Class 9A",
+        "Class 9B",
+        "Class 9E",
+        "Class 9D",
+        "Class 9F"
+      ]
+    },
+    {
+      "name": "Physics",
+      "code": "PS",
+      "periods_per_week": 4,
+      "target_classes": [
+        "Class 11B",
+        "Class 11A",
+        "Class 11E",
+        "Class 11D",
+        "Class 11C",
+        "Class 12D",
+        "Class 12B",
+        "Class 12C",
+        "Class 12E",
+        "Class 12A"
+      ]
+    },
+    {
+      "name": "Chemistry",
+      "code": "CHEM",
+      "periods_per_week": 4,
+      "target_classes": [
+        "Class 12D",
+        "Class 12B",
+        "Class 12C",
+        "Class 12E",
+        "Class 12A",
+        "Class 11B",
+        "Class 11A",
+        "Class 11E",
+        "Class 11D",
+        "Class 11C"
+      ]
+    },
+    {
+      "name": "Hindi",
+      "code": "HIN",
+      "periods_per_week": 3,
+      "target_classes": [
+        "Class 7C",
+        "Class 7G",
+        "Class 7F",
+        "Class 7B",
+        "Class 7H",
+        "Class 7E",
+        "Class 7J",
+        "Class 7A",
+        "Class 7I",
+        "Class 7D",
+        "Class 8J",
+        "Class 8D",
+        "Class 8F",
+        "Class 8G",
+        "Class 8E",
+        "Class 8C",
+        "Class 8A",
+        "Class 8H",
+        "Class 8B",
+        "Class 8I",
+        "Class 9H",
+        "Class 9J",
+        "Class 9C",
+        "Class 9G",
+        "Class 9I",
+        "Class 9A",
+        "Class 9B",
+        "Class 9E",
+        "Class 9D",
+        "Class 9F",
+        "Class 10H",
+        "Class 10D",
+        "Class 10F",
+        "Class 10I",
+        "Class 10E",
+        "Class 10A",
+        "Class 10B",
+        "Class 10G",
+        "Class 10C",
+        "Class 10J"
+      ]
+    }
+  ],
+  "teachers": [
+    {
+      "name": "Mrs. Sharma",
+      "subjects": [
+        "ENG",
+        "HIN",
+        "MAT"
+      ]
+    },
+    {
+      "name": "Mr. Verma",
+      "subjects": [
+        "MAT",
+        "PHY"
+      ]
+    },
+    {
+      "name": "Mrs. Iyer",
+      "subjects": [
+        "SCI",
+        "PHY"
+      ]
+    },
+    {
+      "name": "Mr. Das",
+      "subjects": [
+        "SST",
+        "ENG"
+      ]
+    },
+    {
+      "name": "Ms. Nair",
+      "subjects": [
+        "CS",
+        "SCI",
+        "HIN"
+      ]
+    },
+    {
+      "name": "Mr. Singh",
+      "subjects": [
+        "PHY",
+        "MAT",
+        "ENG"
+      ]
+    },
+    {
+      "name": "CHEM Teacher 1",
+      "subjects": [
+        "CHEM"
+      ]
+    },
+    {
+      "name": "PS Teacher 1",
+      "subjects": [
+        "PS"
+      ]
+    },
+    {
+      "name": "ENG Aux 1",
+      "subjects": [
+        "ENG"
+      ]
+    },
+    {
+      "name": "MAT Aux 1",
+      "subjects": [
+        "MAT"
+      ]
+    },
+    {
+      "name": "SCI Aux 1",
+      "subjects": [
+        "SCI"
+      ]
+    },
+    {
+      "name": "SST Aux 1",
+      "subjects": [
+        "SST"
+      ]
+    },
+    {
+      "name": "CS Aux 1",
+      "subjects": [
+        "CS"
+      ]
+    },
+    {
+      "name": "PHY Aux 1",
+      "subjects": [
+        "PHY"
+      ]
+    },
+    {
+      "name": "PS Aux 1",
+      "subjects": [
+        "PS"
+      ]
+    },
+    {
+      "name": "CHEM Aux 1",
+      "subjects": [
+        "CHEM"
+      ]
+    },
+    {
+      "name": "HIN Aux 1",
+      "subjects": [
+        "HIN"
+      ]
+    },
+    {
+      "name": "Extra SST Teacher 1",
+      "subjects": [
+        "SST"
+      ]
+    },
+    {
+      "name": "Extra HIN Teacher 1",
+      "subjects": [
+        "HIN"
+      ]
+    },
+    {
+      "name": "Extra SCI Teacher 1",
+      "subjects": [
+        "SCI"
+      ]
+    },
+    {
+      "name": "Extra CS Teacher 1",
+      "subjects": [
+        "CS"
+      ]
+    },
+    {
+      "name": "Extra MAT Teacher 1",
+      "subjects": [
+        "MAT"
+      ]
+    },
+    {
+      "name": "Extra ENG Teacher 1",
+      "subjects": [
+        "ENG"
+      ]
+    },
+    {
+      "name": "Extra PHY Teacher 1",
+      "subjects": [
+        "PHY"
+      ]
+    },
+    {
+      "name": "Extra PS Teacher 1",
+      "subjects": [
+        "PS"
+      ]
+    },
+    {
+      "name": "Extra CHEM Teacher 1",
+      "subjects": [
+        "CHEM"
+      ]
+    },
+    {
+      "name": "ENG Aux 2",
+      "subjects": [
+        "ENG"
+      ]
+    },
+    {
+      "name": "MAT Aux 2",
+      "subjects": [
+        "MAT"
+      ]
+    },
+    {
+      "name": "SCI Aux 2",
+      "subjects": [
+        "SCI"
+      ]
+    },
+    {
+      "name": "SST Aux 2",
+      "subjects": [
+        "SST"
+      ]
+    },
+    {
+      "name": "CS Aux 2",
+      "subjects": [
+        "CS"
+      ]
+    },
+    {
+      "name": "PHY Aux 2",
+      "subjects": [
+        "PHY"
+      ]
+    },
+    {
+      "name": "PS Aux 2",
+      "subjects": [
+        "PS"
+      ]
+    },
+    {
+      "name": "CHEM Aux 2",
+      "subjects": [
+        "CHEM"
+      ]
+    },
+    {
+      "name": "HIN Aux 2",
+      "subjects": [
+        "HIN"
+      ]
+    },
+    {
+      "name": "Extra HIN Teacher 2",
+      "subjects": [
+        "HIN"
+      ]
+    },
+    {
+      "name": "Extra SST Teacher 2",
+      "subjects": [
+        "SST"
+      ]
+    },
+    {
+      "name": "Extra SCI Teacher 2",
+      "subjects": [
+        "SCI"
+      ]
+    },
+    {
+      "name": "Extra MAT Teacher 2",
+      "subjects": [
+        "MAT"
+      ]
+    },
+    {
+      "name": "Extra ENG Teacher 2",
+      "subjects": [
+        "ENG"
+      ]
+    }
+  ],
+  "classes": [
+    {
+      "name": "Class 8J",
+      "size": 40
+    },
+    {
+      "name": "Class 8D",
+      "size": 40
+    },
+    {
+      "name": "Class 8F",
+      "size": 40
+    },
+    {
+      "name": "Class 8G",
+      "size": 40
+    },
+    {
+      "name": "Class 8E",
+      "size": 40
+    },
+    {
+      "name": "Class 8C",
+      "size": 40
+    },
+    {
+      "name": "Class 8A",
+      "size": 40
+    },
+    {
+      "name": "Class 8H",
+      "size": 40
+    },
+    {
+      "name": "Class 8B",
+      "size": 40
+    },
+    {
+      "name": "Class 8I",
+      "size": 40
+    },
+    {
+      "name": "Class 10H",
+      "size": 40
+    },
+    {
+      "name": "Class 10D",
+      "size": 40
+    },
+    {
+      "name": "Class 10F",
+      "size": 40
+    },
+    {
+      "name": "Class 10I",
+      "size": 40
+    },
+    {
+      "name": "Class 10E",
+      "size": 40
+    },
+    {
+      "name": "Class 10A",
+      "size": 40
+    },
+    {
+      "name": "Class 10B",
+      "size": 40
+    },
+    {
+      "name": "Class 10G",
+      "size": 40
+    },
+    {
+      "name": "Class 10C",
+      "size": 40
+    },
+    {
+      "name": "Class 10J",
+      "size": 40
+    },
+    {
+      "name": "Class 11B",
+      "size": 40
+    },
+    {
+      "name": "Class 11A",
+      "size": 40
+    },
+    {
+      "name": "Class 11E",
+      "size": 40
+    },
+    {
+      "name": "Class 11D",
+      "size": 40
+    },
+    {
+      "name": "Class 11C",
+      "size": 40
+    },
+    {
+      "name": "Class 12D",
+      "size": 40
+    },
+    {
+      "name": "Class 12B",
+      "size": 40
+    },
+    {
+      "name": "Class 12C",
+      "size": 40
+    },
+    {
+      "name": "Class 12E",
+      "size": 40
+    },
+    {
+      "name": "Class 12A",
+      "size": 40
+    },
+    {
+      "name": "Class 7C",
+      "size": 40
+    },
+    {
+      "name": "Class 7G",
+      "size": 40
+    },
+    {
+      "name": "Class 7F",
+      "size": 40
+    },
+    {
+      "name": "Class 7B",
+      "size": 40
+    },
+    {
+      "name": "Class 7H",
+      "size": 40
+    },
+    {
+      "name": "Class 7E",
+      "size": 40
+    },
+    {
+      "name": "Class 7J",
+      "size": 40
+    },
+    {
+      "name": "Class 7A",
+      "size": 40
+    },
+    {
+      "name": "Class 7I",
+      "size": 40
+    },
+    {
+      "name": "Class 7D",
+      "size": 40
+    },
+    {
+      "name": "Class 9H",
+      "size": 40
+    },
+    {
+      "name": "Class 9J",
+      "size": 40
+    },
+    {
+      "name": "Class 9C",
+      "size": 40
+    },
+    {
+      "name": "Class 9G",
+      "size": 40
+    },
+    {
+      "name": "Class 9I",
+      "size": 40
+    },
+    {
+      "name": "Class 9A",
+      "size": 40
+    },
+    {
+      "name": "Class 9B",
+      "size": 40
+    },
+    {
+      "name": "Class 9E",
+      "size": 40
+    },
+    {
+      "name": "Class 9D",
+      "size": 40
+    },
+    {
+      "name": "Class 9F",
+      "size": 40
+    }
+  ],
+  "rooms": [
+    {
+      "name": "Room 101",
+      "capacity": 42
+    },
+    {
+      "name": "Room 102",
+      "capacity": 40
+    },
+    {
+      "name": "Room 103",
+      "capacity": 44
+    },
+    {
+      "name": "Room 104",
+      "capacity": 38
+    },
+    {
+      "name": "Computer Lab",
+      "capacity": 30
+    },
+    {
+      "name": "Room 6",
+      "capacity": 40
+    },
+    {
+      "name": "Room 7",
+      "capacity": 40
+    },
+    {
+      "name": "Room 8",
+      "capacity": 40
+    },
+    {
+      "name": "Room 9",
+      "capacity": 40
+    },
+    {
+      "name": "Room 10",
+      "capacity": 40
+    },
+    {
+      "name": "Room 11",
+      "capacity": 40
+    },
+    {
+      "name": "Room 12",
+      "capacity": 40
+    },
+    {
+      "name": "Room 13",
+      "capacity": 40
+    },
+    {
+      "name": "Room 14",
+      "capacity": 40
+    },
+    {
+      "name": "Room 15",
+      "capacity": 40
+    },
+    {
+      "name": "Room 16",
+      "capacity": 40
+    },
+    {
+      "name": "Room 17",
+      "capacity": 40
+    },
+    {
+      "name": "Room 18",
+      "capacity": 40
+    },
+    {
+      "name": "Room 19",
+      "capacity": 40
+    },
+    {
+      "name": "Room 20",
+      "capacity": 40
+    },
+    {
+      "name": "Room 21",
+      "capacity": 40
+    },
+    {
+      "name": "Room 22",
+      "capacity": 40
+    },
+    {
+      "name": "Room 23",
+      "capacity": 40
+    },
+    {
+      "name": "Room 24",
+      "capacity": 40
+    },
+    {
+      "name": "Room 25",
+      "capacity": 40
+    },
+    {
+      "name": "Room 26",
+      "capacity": 40
+    },
+    {
+      "name": "Room 27",
+      "capacity": 40
+    },
+    {
+      "name": "Room 28",
+      "capacity": 40
+    },
+    {
+      "name": "Room 29",
+      "capacity": 40
+    },
+    {
+      "name": "Room 30",
+      "capacity": 40
+    },
+    {
+      "name": "Room 31",
+      "capacity": 40
+    },
+    {
+      "name": "Room 32",
+      "capacity": 40
+    },
+    {
+      "name": "Room 33",
+      "capacity": 40
+    },
+    {
+      "name": "Room 34",
+      "capacity": 40
+    },
+    {
+      "name": "Room 35",
+      "capacity": 40
+    },
+    {
+      "name": "Room 36",
+      "capacity": 40
+    },
+    {
+      "name": "Room 37",
+      "capacity": 40
+    },
+    {
+      "name": "Room 38",
+      "capacity": 40
+    },
+    {
+      "name": "Room 39",
+      "capacity": 40
+    },
+    {
+      "name": "Room 40",
+      "capacity": 40
+    },
+    {
+      "name": "Room 41",
+      "capacity": 40
+    },
+    {
+      "name": "Room 42",
+      "capacity": 40
+    },
+    {
+      "name": "Room 43",
+      "capacity": 40
+    },
+    {
+      "name": "Room 44",
+      "capacity": 40
+    },
+    {
+      "name": "Room 45",
+      "capacity": 40
+    },
+    {
+      "name": "Room 46",
+      "capacity": 40
+    },
+    {
+      "name": "Room 47",
+      "capacity": 40
+    },
+    {
+      "name": "Room 48",
+      "capacity": 40
+    },
+    {
+      "name": "Room 49",
+      "capacity": 40
+    },
+    {
+      "name": "Room 50",
+      "capacity": 40
+    },
+    {
+      "name": "Room 51",
+      "capacity": 40
+    },
+    {
+      "name": "Room 52",
+      "capacity": 40
+    },
+    {
+      "name": "Room 53",
+      "capacity": 40
+    },
+    {
+      "name": "Room 54",
+      "capacity": 40
+    },
+    {
+      "name": "Room 55",
+      "capacity": 40
+    },
+    {
+      "name": "Room 56",
+      "capacity": 40
+    },
+    {
+      "name": "Room 57",
+      "capacity": 40
+    },
+    {
+      "name": "Room 58",
+      "capacity": 40
+    },
+    {
+      "name": "Room 59",
+      "capacity": 40
+    },
+    {
+      "name": "Room 60",
+      "capacity": 40
+    },
+    {
+      "name": "Room 61",
+      "capacity": 40
+    },
+    {
+      "name": "Room 62",
+      "capacity": 40
+    },
+    {
+      "name": "Room 63",
+      "capacity": 40
+    },
+    {
+      "name": "Room 64",
+      "capacity": 40
+    },
+    {
+      "name": "Room 65",
+      "capacity": 40
+    },
+    {
+      "name": "Room 66",
+      "capacity": 40
+    },
+    {
+      "name": "Room 67",
+      "capacity": 40
+    },
+    {
+      "name": "Room 68",
+      "capacity": 40
+    },
+    {
+      "name": "Room 69",
+      "capacity": 40
+    },
+    {
+      "name": "Room 70",
+      "capacity": 40
+    },
+    {
+      "name": "Room 71",
+      "capacity": 40
+    }
+  ],
+  "working_days": [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday"
+  ],
+  "periods_per_day": 8,
+  "period_duration_minutes": 45,
+  "lunch_duration_minutes": 30,
+  "start_time": "08:30",
+  "constraints": {
+    "max_consecutive_periods": 3,
+    "lunch_after_period": 3,
+    "max_periods_per_day_per_teacher": 6
+  },
+  "soft_constraints": []
+}

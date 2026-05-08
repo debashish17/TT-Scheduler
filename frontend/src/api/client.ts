@@ -97,9 +97,11 @@ export { apiClient };
 // SCHOOL TIMETABLE
 // ============================================
 export const schoolAPI = {
-  /** Generate a school timetable. Auto-saves on success; returns { run_id, ...result }. */
+  /** Generate a school timetable. Auto-saves on success; returns { run_id, ...result }.
+   *  Timeout: solver tier-3 caps at 600s; Auto-Fix retries can push to 1800s; add
+   *  a 60s buffer for save+sanity-check round-trips. */
   generate: (data: any) =>
-    apiClient.post('/school/generate', data, { timeout: 180000 }),
+    apiClient.post('/school/generate', data, { timeout: 1860000 }),
 
   /** List the user's saved school runs (summary). */
   listRuns: () => apiClient.get('/school/runs'),

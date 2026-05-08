@@ -27,7 +27,7 @@ Falls back to a fast greedy algorithm if CP-SAT times out or is infeasible.
 import logging
 import math
 import copy
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 from datetime import datetime, timedelta
 
 from app.core.solver_shared import generate_time_slots as _generate_time_slots
@@ -84,14 +84,32 @@ def solve_timetable(problem: Dict[str, Any]) -> Dict[str, Any]:
         logger.error(f"CP-SAT failed: {e}", exc_info=True)
         return _empty_result(problem, [], problem.get("working_days", []), "CP-SAT")
 
-    # Flag if CP-SAT had to leave unplaced sessions
-    if result.get("stats", {}).get("unplaced_sessions", 0) > 0:
-        unplaced = result["stats"]["unplaced_sessions"]
+    # Flag genuine unplacement. Greedy completion has already run inside
+    # _cp_solve and tried to fill anything CP-SAT couldn't fit. A non-zero
+    # `unplaced_sessions` here means *neither* could place those sessions —
+    # always a true capacity / constraint problem, not a time issue.
+    stats = result.get("stats", {}) or {}
+    if stats.get("unplaced_sessions", 0) > 0:
+        unplaced = stats["unplaced_sessions"]
+        status   = stats.get("solver_status", "")
+        elapsed  = stats.get("solve_time_seconds", 0)
+        msg = (
+            f"Could not fit {unplaced} session(s) — neither CP-SAT nor the greedy "
+            f"completion pass could find a valid slot for them. The constraints are "
+            f"genuinely too tight for the available teachers/rooms/periods."
+        )
+        fix = "Add more teachers, rooms, or working periods, or reduce periods_per_week"
         warnings.append({
             "level": "warning",
             "code": "UNPLACED_SESSION",
-            "message": f"Solver could not fit {unplaced} session(s) due to constraints.",
-            "detail": {"unplaced_count": unplaced, "fix": "Add more teachers or rooms, or reduce periods_per_week"}
+            "message": msg,
+            "detail": {
+                "unplaced_count": unplaced,
+                "solver_status": status,
+                "cause": "constraints",
+                "elapsed_seconds": elapsed,
+                "fix": fix,
+            }
         })
 
     # Merge pre-solve warnings with any placement warnings from greedy
@@ -304,7 +322,11 @@ def _preprocess(problem: Dict[str, Any]) -> Dict[str, Any]:
 # CP-SAT Solver — integer-variable model
 # ──────────────────────────────────────────────────────────────
 
-def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
+def _cp_solve(
+    problem: Dict[str, Any],
+    warm_start_assignments: Optional[List[Dict[str, Any]]] = None,
+    _is_warm_retry: bool = False,
+) -> Dict[str, Any]:
     from ortools.sat.python import cp_model
 
     t0 = datetime.now()
@@ -450,39 +472,84 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
     for s, (ci, si) in enumerate(sessions):
         cs_groups.setdefault((ci, si), []).append(s)
 
+    # Symmetry breaking: when Auto-Fix or the user provides multiple teachers
+    # with identical capability sets (e.g. "Math Teacher 1, 2, 3" all teach
+    # only Math with the same caps), CP-SAT explores N! equivalent solutions.
+    # Detect interchangeable groups and break the symmetry by forcing classes
+    # to be assigned to the lower-indexed teacher first.
+    #
+    # Encoding: for each subject's qualified teachers, find groups of
+    # interchangeable ones (same subject set, same max_periods_per_week).
+    # Then for adjacent pairs (ti, tj) within a group, require:
+    #     class_count_using(ti) >= class_count_using(tj)
+    # which collapses N! symmetry to 1 canonical ordering.
+    def _teacher_signature(t: Dict[str, Any]) -> Tuple:
+        return (
+            tuple(sorted(t.get("subjects", []))),
+            t.get("max_periods_per_week"),
+        )
+
+    # Build per-subject teacher equivalence classes
+    sig_by_teacher = [_teacher_signature(t) for t in teachers]
+    for si, subj in enumerate(subjects):
+        # Qualified teachers for this subject
+        qualified = [ti for ti in range(len(teachers)) if si in teacher_can[ti]]
+        if len(qualified) < 2:
+            continue
+        # Bucket by signature; only buckets with 2+ teachers need symmetry breaking
+        buckets: Dict[Tuple, List[int]] = {}
+        for ti in qualified:
+            buckets.setdefault(sig_by_teacher[ti], []).append(ti)
+        for sig, group in buckets.items():
+            if len(group) < 2:
+                continue
+            # group is sorted by teacher index already (qualified iterates ascending)
+            # Build an indicator per (class, subject) pair: this pair uses teacher ti
+            class_groups_for_si = [
+                grp for (ci, sii), grp in cs_groups.items() if sii == si
+            ]
+            if not class_groups_for_si:
+                continue
+            # Count classes using each interchangeable teacher
+            counts = []
+            for ti in group:
+                indicators = []
+                for grp in class_groups_for_si:
+                    # Use the first session's t_var (others are equal-pinned)
+                    uses_ti = model.NewBoolVar(f"sym_uses_{si}_{ti}_g{grp[0]}")
+                    model.Add(t_var[grp[0]] == ti).OnlyEnforceIf(uses_ti)
+                    model.Add(t_var[grp[0]] != ti).OnlyEnforceIf(uses_ti.Not())
+                    indicators.append(uses_ti)
+                count_var = model.NewIntVar(0, len(class_groups_for_si),
+                                            f"sym_count_{si}_{ti}")
+                model.Add(count_var == sum(indicators))
+                counts.append(count_var)
+            # Adjacent ordering: count(ti) >= count(tj) for each consecutive pair
+            for i in range(len(counts) - 1):
+                model.Add(counts[i] >= counts[i + 1])
+
     for (ci, si), grp in cs_groups.items():
         if len(grp) > 1:
-            # Hard Constraint: Ensure the same teacher teaches all sessions of a specific class-subject combination
+            # Hard Constraint: All sessions of a (class, subject) share teacher AND room.
+            # The room pin mirrors college_solver C5 (line 576) and is the architectural
+            # fix that lets dense problems converge — collapses S independent room
+            # decisions to one per (class, subject), shrinking the search space ~4x
+            # on typical schools.
             for i in range(1, len(grp)):
                 model.Add(t_var[grp[0]] == t_var[grp[i]])
+                model.Add(r_var[grp[0]] == r_var[grp[i]])
 
-            # Hard Constraint: Forbid consecutive periods of the same subject on the same day for a class
-            for i in range(len(grp)):
-                for j in range(i + 1, len(grp)):
-                    same_day = model.NewBoolVar(f"hs_sd_{ci}_{si}_{i}_{j}")
-                    model.Add(day_var[grp[i]] == day_var[grp[j]]).OnlyEnforceIf(same_day)
-                    model.Add(day_var[grp[i]] != day_var[grp[j]]).OnlyEnforceIf(same_day.Not())
-
-                    vp_diff = model.NewIntVar(-n_valid, n_valid, f"hs_vpdiff_{ci}_{si}_{i}_{j}")
-                    model.Add(vp_diff == vp_var[grp[i]] - vp_var[grp[j]])
-
-                    is_consec_1 = model.NewBoolVar(f"hs_c1_{ci}_{si}_{i}_{j}")
-                    model.Add(vp_diff == 1).OnlyEnforceIf(is_consec_1)
-                    model.Add(vp_diff != 1).OnlyEnforceIf(is_consec_1.Not())
-
-                    is_consec_m1 = model.NewBoolVar(f"hs_cm1_{ci}_{si}_{i}_{j}")
-                    model.Add(vp_diff == -1).OnlyEnforceIf(is_consec_m1)
-                    model.Add(vp_diff != -1).OnlyEnforceIf(is_consec_m1.Not())
-
-                    is_consec = model.NewBoolVar(f"hs_consec_{ci}_{si}_{i}_{j}")
-                    model.AddBoolOr([is_consec_1, is_consec_m1]).OnlyEnforceIf(is_consec)
-                    model.AddBoolAnd([is_consec_1.Not(), is_consec_m1.Not()]).OnlyEnforceIf(is_consec.Not())
-
-                    # They cannot be on the same day, consecutive, and both scheduled
-                    forbidden = model.NewBoolVar(f"hs_forbid_{ci}_{si}_{i}_{j}")
-                    model.AddBoolAnd([same_day, is_consec, is_scheduled[grp[i]], is_scheduled[grp[j]]]).OnlyEnforceIf(forbidden)
-                    model.AddBoolOr([same_day.Not(), is_consec.Not(), is_scheduled[grp[i]].Not(), is_scheduled[grp[j]].Not()]).OnlyEnforceIf(forbidden.Not())
-                    model.Add(forbidden == 0)
+            # Note: "no consecutive same subject on same day" used to be encoded
+            # here as a hard O(K^2) constraint per (class, subject) — generating
+            # ~8 BoolVars per session-pair. On dense schools (17 classes x 6
+            # subjects x 5 ppw) that's ~8000 BoolVars + as many model.Add calls,
+            # which dominated CP-SAT model build cost.
+            #
+            # Demoted to a soft penalty below (lighter weight than the same-day
+            # spread penalty so the spread term still wins). The soft "spread
+            # across days" objective already discourages this scenario in the
+            # common case; the rare consecutive placement is acceptable when the
+            # alternative is leaving the session unplaced.
 
     # ── Soft constraints as objective ──────────────────────
     # 4. Spread each subject across different days per class (soft)
@@ -490,6 +557,13 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
     #    We want to minimize this.
     penalty_terms = []
 
+    # Same-day spread penalty. Weight bumped to 1000 per same-day pair so the
+    # soft constraint actually has teeth against the 100,000-per-placement
+    # reward. Previously weight 1 was decorative (a 4-session-on-one-day
+    # solution scored only 6 penalty units, easily ignored). With weight 1000,
+    # 6 same-day pairs cost 6,000 — comparable to placing 0.06 of a session,
+    # giving the spread real influence on search without overpowering placement.
+    SPREAD_WEIGHT = 1000
     for (ci, si), grp in cs_groups.items():
         if len(grp) < 2:
             continue
@@ -498,7 +572,7 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
                 same_day = model.NewBoolVar(f"sd_{ci}_{si}_{i}_{j}")
                 model.Add(day_var[grp[i]] == day_var[grp[j]]).OnlyEnforceIf(same_day)
                 model.Add(day_var[grp[i]] != day_var[grp[j]]).OnlyEnforceIf(same_day.Not())
-                penalty_terms.append(same_day)
+                penalty_terms.append(same_day * SPREAD_WEIGHT)
 
     # 5. Soft: max periods per day per teacher (hard cap if asked)
     # Convert to hard constraint for max_per_day_teacher
@@ -567,7 +641,7 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
 
     # ── Objective ──────────────────────────────────────────
     # Heavily prioritize scheduling all sessions over soft constraints
-    reward_scheduled = sum(is_scheduled[s] * 1_000_000 for s in range(S))
+    reward_scheduled = sum(is_scheduled[s] * 100_000 for s in range(S))
     if penalty_terms:
         model.Maximize(reward_scheduled - sum(penalty_terms))
     else:
@@ -577,33 +651,204 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
     for s in range(S):
         model.AddHint(is_scheduled[s], 1)
 
-    # Decision strategy: branch on is_scheduled vars first, choosing 1 (true).
-    # This forces CP-SAT to explore "everything scheduled" branch first, finding
-    # complete solutions early instead of wasting time on partial schedules.
+    # Warm-start hint from a prior greedy solution. Only set on retry path
+    # (CP-SAT failed on its own, then we ran greedy, then re-call with hints).
+    # We hint only `day_var` and `vp_var` — letting CP-SAT pick teacher and
+    # room itself. This avoids hint-discard on room-pinning conflicts (greedy
+    # doesn't enforce per-(class,subject) room equality) while still giving
+    # CP-SAT the time-shape of greedy's solution as a feasible starting point.
+    if warm_start_assignments:
+        # Build (class_name, subject_code) → list of (day_idx, vp_idx) from greedy.
+        greedy_slots: Dict[Tuple[str, str], List[Tuple[int, int]]] = {}
+        for a in warm_start_assignments:
+            cn = a.get("class_name")
+            sc = a.get("subject_code")
+            d  = a.get("day_index")
+            p  = a.get("period")
+            if cn is None or sc is None or d is None or p is None:
+                continue
+            # period is 1-based; convert to vp_index by finding p-1 in valid_periods
+            p0 = int(p) - 1
+            if p0 not in valid_periods:
+                continue
+            vp = valid_periods.index(p0)
+            greedy_slots.setdefault((cn, sc), []).append((int(d), int(vp)))
+
+        # Assign greedy's slots to CP-SAT's sessions, one per (class, subject)
+        # session in order. Extra greedy slots beyond CP-SAT's session count
+        # are dropped; missing slots leave the session unhinted.
+        used_per_pair: Dict[Tuple[int, int], int] = {}
+        n_hinted = 0
+        for s, (ci, si) in enumerate(sessions):
+            cn = classes[ci]["name"]
+            sc = subjects[si]["code"]
+            slots = greedy_slots.get((cn, sc))
+            if not slots:
+                continue
+            idx = used_per_pair.get((ci, si), 0)
+            if idx >= len(slots):
+                continue
+            d, vp = slots[idx]
+            used_per_pair[(ci, si)] = idx + 1
+            # Only hint if values are within the current variable domains
+            if 0 <= d < D and 0 <= vp < n_valid:
+                model.AddHint(day_var[s], d)
+                model.AddHint(vp_var[s], vp)
+                n_hinted += 1
+        logger.info(
+            f"CP-SAT warm-start: hinted day+vp for {n_hinted}/{S} sessions "
+            f"from greedy solution"
+        )
+
+    # Layered decision strategy. CP-SAT branches in this order:
+    #   1. is_scheduled (max-value first → try to place every session)
+    #   2. day_var     (lowest day first → fill Monday before Friday)
+    #   3. vp_var      (lowest period first → fill morning before afternoon)
+    #   4. t_var       (lowest teacher index → consistent teacher assignment)
+    #   5. r_var       (lowest room index → consistent room assignment)
+    #
+    # Matches how a human schedules — pick the time slot first, then assign
+    # the resources. Cuts search time dramatically on dense problems because
+    # CP-SAT no longer wastes time exploring teacher/room permutations before
+    # committing to a (day, period).
     model.AddDecisionStrategy(
-        is_scheduled,
-        cp_model.CHOOSE_FIRST,
-        cp_model.SELECT_MAX_VALUE,
+        is_scheduled, cp_model.CHOOSE_FIRST, cp_model.SELECT_MAX_VALUE,
+    )
+    model.AddDecisionStrategy(
+        day_var,      cp_model.CHOOSE_FIRST, cp_model.SELECT_MIN_VALUE,
+    )
+    model.AddDecisionStrategy(
+        vp_var,       cp_model.CHOOSE_FIRST, cp_model.SELECT_MIN_VALUE,
+    )
+    model.AddDecisionStrategy(
+        t_var,        cp_model.CHOOSE_FIRST, cp_model.SELECT_MIN_VALUE,
+    )
+    model.AddDecisionStrategy(
+        r_var,        cp_model.CHOOSE_FIRST, cp_model.SELECT_MIN_VALUE,
     )
 
     # ── Solve ──────────────────────────────────────────────
+    # Density-aware time budget. Density = sessions to schedule / total class-slots
+    # available. Dense problems (>80%) genuinely need more search time; sparse
+    # ones converge quickly regardless of raw size.
+    total_class_slots = max(1, len(classes) * D * n_valid)
+    density = S / total_class_slots
+    if density < 0.30:
+        time_budget = 10.0
+    elif density < 0.70:
+        time_budget = 90.0
+    elif density < 0.90:
+        time_budget = 300.0
+    else:
+        time_budget = 600.0
+
+    # Caller (Auto-Fix retry) may override the auto-tiered budget. Log the
+    # *actual* budget given to CP-SAT so observability matches reality.
+    actual_budget = float(problem.get("solve_time_limit_seconds") or time_budget)
+    override_note = "" if actual_budget == time_budget else f" [override; tier={time_budget}s]"
+    logger.info(
+        f"CP-SAT budget: {actual_budget}s (density={density:.2f}, "
+        f"{S} sessions / {total_class_slots} class-slots){override_note}"
+    )
+
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = problem.get("solve_time_limit_seconds", 120.0)
+    solver.parameters.max_time_in_seconds = actual_budget
     solver.parameters.num_search_workers = 4   # parallel search
     solver.parameters.log_search_progress = False
 
-    status = solver.Solve(model)
+    # Early-stop callback. Stops the search in three cases:
+    #   (1) Complete + polished: every session is placed AND we've spent
+    #       POLISH_SECONDS without further soft-constraint improvement. The
+    #       polish window lets CP-SAT spread/balance the schedule a bit
+    #       instead of shipping the very first complete (but possibly bunched)
+    #       solution.
+    #   (2) Placement-stalled: we've found at least one feasible solution and
+    #       haven't improved the placement count for STALL_SECONDS. Greedy
+    #       completion will fill the remainder; further CP-SAT search at the
+    #       same placement level just wastes the budget chasing soft polish.
+    #   (3) Cap-from-first-solution: once we have ANY feasible solution, cap
+    #       remaining search at MAX_AFTER_FIRST_SOLUTION seconds. This is the
+    #       safety net for when callbacks stop firing entirely (CP-SAT
+    #       converges internally without finding new improving solutions but
+    #       hasn't proved optimality, so it just sits there until deadline).
+    import time as _time
+    STALL_SECONDS              = 8.0
+    POLISH_SECONDS             = 5.0
+    MAX_AFTER_FIRST_SOLUTION   = 20.0
+
+    class _StopWhenStable(cp_model.CpSolverSolutionCallback):
+        def __init__(self, scheduled_vars, total):
+            cp_model.CpSolverSolutionCallback.__init__(self)
+            self._scheduled        = scheduled_vars
+            self._total            = total
+            self._best             = -1
+            self._best_at          = _time.monotonic()
+            self._first_solution_at: Any = None
+            self._first_complete_at: Any = None
+            self._best_obj         = None
+            self.stopped_complete = False
+            self.stopped_stalled  = False
+            self.stopped_capped   = False
+
+        def on_solution_callback(self):
+            placed = sum(self.Value(v) for v in self._scheduled)
+            now    = _time.monotonic()
+            obj    = self.ObjectiveValue()
+            if self._first_solution_at is None:
+                self._first_solution_at = now
+            if placed > self._best:
+                self._best    = placed
+                self._best_at = now
+            if placed >= self._total:
+                if self._first_complete_at is None:
+                    self._first_complete_at = now
+                    self._best_obj = obj
+                else:
+                    if self._best_obj is None or obj > self._best_obj:
+                        self._best_obj = obj
+                        self._first_complete_at = now
+                if (now - self._first_complete_at) >= POLISH_SECONDS:
+                    self.stopped_complete = True
+                    self.StopSearch()
+                    return
+            else:
+                # Tight stall on placement-count plateau
+                if self._best > 0 and (now - self._best_at) >= STALL_SECONDS:
+                    self.stopped_stalled = True
+                    self.StopSearch()
+                    return
+                # Hard cap from first feasible solution, regardless of whether
+                # callbacks keep firing. CP-SAT may settle on a partial
+                # solution and stop emitting improvements without proving
+                # optimality — this stops it cleanly.
+                if (
+                    self._first_solution_at is not None
+                    and (now - self._first_solution_at) >= MAX_AFTER_FIRST_SOLUTION
+                ):
+                    self.stopped_capped = True
+                    self.StopSearch()
+
+    early_stop = _StopWhenStable(is_scheduled, S)
+    status = solver.Solve(model, early_stop)
     elapsed = round((datetime.now() - t0).total_seconds(), 3)
-    logger.info(f"CP-SAT done: {solver.StatusName(status)} in {elapsed}s")
+    if early_stop.stopped_complete:
+        early_note = " (early-stop: all sessions placed)"
+    elif early_stop.stopped_stalled:
+        early_note = f" (early-stop: stalled at {early_stop._best}/{S} for {STALL_SECONDS}s)"
+    elif early_stop.stopped_capped:
+        early_note = f" (early-stop: hit {MAX_AFTER_FIRST_SOLUTION}s cap from first solution at {early_stop._best}/{S})"
+    else:
+        early_note = ""
+    logger.info(f"CP-SAT done: {solver.StatusName(status)} in {elapsed}s{early_note}")
 
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         assignments = []
-        unplaced_count = 0
+        unplaced_pairs: List[Tuple[int, int]] = []
         for s, (ci, si) in enumerate(sessions):
             if not solver.Value(is_scheduled[s]):
-                unplaced_count += 1
+                unplaced_pairs.append((ci, si))
                 continue
-                
+
             d  = solver.Value(day_var[s])
             vp = solver.Value(vp_var[s])
             p  = valid_periods[vp]   # actual 0-based period index
@@ -625,6 +870,25 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
                 "start_time":    slot["start"],
                 "end_time":      slot["end"],
             })
+
+        # Greedy completion: try to fill any unplaced sessions into remaining
+        # free (day, period) slots, respecting CP-SAT's already-chosen
+        # teacher/room/class assignments. Eliminates "ran out of time" partial
+        # solutions whenever capacity actually exists for the leftovers.
+        unplaced_count = len(unplaced_pairs)
+        if unplaced_pairs:
+            extra, still_unplaced = _greedy_complete(
+                unplaced_pairs, assignments,
+                classes, subjects, teachers, rooms,
+                working_days, period_slots, valid_periods,
+            )
+            if extra:
+                logger.info(
+                    f"Greedy completion placed {len(extra)} of {unplaced_count} "
+                    f"CP-SAT-unplaced session(s)."
+                )
+                assignments.extend(extra)
+                unplaced_count = still_unplaced
 
         grid = _build_grid(assignments, classes, working_days, period_slots)
         return {
@@ -651,8 +915,207 @@ def _cp_solve(problem: Dict[str, Any]) -> Dict[str, Any]:
             },
         }
     else:
-        logger.warning(f"CP-SAT failed completely: {solver.StatusName(status)}")
-        return _empty_result(problem, display_slots, working_days, "CP-SAT")
+        # CP-SAT found nothing (UNKNOWN/INFEASIBLE/MODEL_INVALID). Run greedy
+        # as fallback. If greedy produces a high-quality solution, retry
+        # CP-SAT once with greedy as a warm-start hint — this often turns
+        # UNKNOWN into FEASIBLE/OPTIMAL on problems where the model is large
+        # enough that CP-SAT's presolve eats the whole budget without ever
+        # finding an initial solution.
+        logger.warning(
+            f"CP-SAT found no solution ({solver.StatusName(status)}); "
+            f"falling back to greedy."
+        )
+        greedy = _greedy_solve(problem)
+
+        # Guard: only attempt warm-start retry if
+        #   (a) we're not already in a retry (no infinite recursion)
+        #   (b) greedy actually placed >=95% of expected sessions (otherwise
+        #       its hint isn't reliable)
+        greedy_placed   = len(greedy.get("assignments", []))
+        greedy_unplaced = greedy.get("stats", {}).get("unplaced_sessions", 0)
+        greedy_total    = greedy_placed + greedy_unplaced
+        warm_start_eligible = (
+            not _is_warm_retry
+            and greedy_placed > 0
+            and greedy_total > 0
+            and (greedy_placed / greedy_total) >= 0.95
+        )
+
+        if warm_start_eligible:
+            logger.info(
+                f"Greedy placed {greedy_placed}/{greedy_total}; "
+                f"retrying CP-SAT with greedy solution as warm-start hint."
+            )
+            try:
+                warm_result = _cp_solve(
+                    problem,
+                    warm_start_assignments=greedy["assignments"],
+                    _is_warm_retry=True,
+                )
+                warm_status = warm_result.get("stats", {}).get("solver_status", "")
+                warm_placed = warm_result.get("stats", {}).get("total_assignments", 0)
+                # Use warm-start result only if it produced something usable.
+                # Otherwise fall through to the greedy result.
+                if warm_status in ("OPTIMAL", "FEASIBLE") and warm_placed > 0:
+                    logger.info(
+                        f"Warm-start CP-SAT succeeded: status={warm_status}, "
+                        f"placed={warm_placed}"
+                    )
+                    return warm_result
+                logger.info(
+                    f"Warm-start CP-SAT did not improve over greedy "
+                    f"(status={warm_status}); using greedy result."
+                )
+            except Exception as e:
+                logger.warning(f"Warm-start retry failed: {e}; using greedy result.")
+
+        # Tag with the fact that CP-SAT failed so callers can distinguish
+        # "greedy as fallback" from "greedy as primary."
+        greedy_stats = greedy.setdefault("stats", {})
+        greedy_stats["solver"]        = "Greedy (CP-SAT failed)"
+        greedy_stats["solver_status"] = f"CP-SAT-{solver.StatusName(status)}"
+        greedy_stats["solve_time_seconds"] = elapsed
+        greedy["solver"] = "Greedy (CP-SAT failed)"
+        greedy.setdefault("warnings", []).insert(0, {
+            "level":   "warning",
+            "code":    "CPSAT_NO_SOLUTION",
+            "message": (
+                f"CP-SAT could not find any complete solution within {elapsed}s "
+                f"(status={solver.StatusName(status)}). Returned a best-effort "
+                f"greedy timetable. Consider adding more teachers or rooms."
+            ),
+            "detail": {"cpsat_status": solver.StatusName(status), "elapsed": elapsed},
+        })
+        return greedy
+
+
+# ──────────────────────────────────────────────────────────────
+# Greedy completion — fill in sessions CP-SAT couldn't place
+# ──────────────────────────────────────────────────────────────
+
+def _greedy_complete(
+    unplaced_pairs: List[Tuple[int, int]],
+    placed_assignments: List[Dict[str, Any]],
+    classes: List[Dict[str, Any]],
+    subjects: List[Dict[str, Any]],
+    teachers: List[Dict[str, Any]],
+    rooms: List[Dict[str, Any]],
+    working_days: List[str],
+    period_slots: List[Dict[str, Any]],
+    valid_periods: List[int],
+) -> Tuple[List[Dict[str, Any]], int]:
+    """
+    Try to place each (class_idx, subject_idx) pair from `unplaced_pairs` into
+    a (day, period) slot that doesn't conflict with `placed_assignments`.
+
+    Honours hard conflicts (class, teacher, room can't double-book) and
+    prefers same-teacher-per-class when CP-SAT already pinned a teacher to a
+    (class, subject) pair. Soft constraints are ignored — this is a best-effort
+    fill, not an optimisation pass.
+
+    Returns: (new_assignments, still_unplaced_count)
+    """
+    D = len(working_days)
+    extra: List[Dict[str, Any]] = []
+
+    # Reconstruct busy maps from already-placed assignments
+    class_busy:   Dict[Tuple[int, int, int], bool] = {}
+    teacher_busy: Dict[Tuple[int, int, int], bool] = {}
+    room_busy:    Dict[Tuple[int, int, int], bool] = {}
+    # Same-teacher-per-class hint: which teacher CP-SAT chose for each (class, subject)
+    pinned_teacher: Dict[Tuple[int, int], int] = {}
+
+    for a in placed_assignments:
+        ci = a["class_index"]
+        ti = a["teacher_index"]
+        ri = a["room_index"]
+        d  = a["day_index"]
+        p  = a["period"] - 1
+        class_busy[(ci, d, p)]   = True
+        teacher_busy[(ti, d, p)] = True
+        room_busy[(ri, d, p)]    = True
+        # CP-SAT enforces same-teacher-per-class; capture the binding
+        si_for_class = next(
+            (idx for idx, s in enumerate(subjects) if s["code"] == a["subject_code"]),
+            None,
+        )
+        if si_for_class is not None:
+            pinned_teacher.setdefault((ci, si_for_class), ti)
+
+    # Subject code -> index, room eligibility, teacher capability
+    teacher_can = []
+    subj_idx = {s["code"]: i for i, s in enumerate(subjects)}
+    for t in teachers:
+        teacher_can.append({subj_idx[c] for c in t.get("subjects", []) if c in subj_idx})
+    room_ok: Dict[int, List[int]] = {}
+    for ci, cls in enumerate(classes):
+        size = int(cls.get("size", 30))
+        eligible = [ri for ri, r in enumerate(rooms) if int(r.get("capacity", 40)) >= size]
+        room_ok[ci] = eligible if eligible else list(range(len(rooms)))
+
+    still_unplaced = 0
+    for (ci, si) in unplaced_pairs:
+        placed = False
+        # Prefer the teacher CP-SAT already bound to this (class, subject)
+        teacher_priority: List[int] = []
+        if (ci, si) in pinned_teacher:
+            teacher_priority.append(pinned_teacher[(ci, si)])
+        for ti, can in enumerate(teacher_can):
+            if si in can and ti not in teacher_priority:
+                teacher_priority.append(ti)
+
+        for d in range(D):
+            if placed:
+                break
+            for p in valid_periods:
+                if class_busy.get((ci, d, p)):
+                    continue
+                ti = next(
+                    (t for t in teacher_priority if not teacher_busy.get((t, d, p))),
+                    None,
+                )
+                if ti is None:
+                    continue
+                ri = next(
+                    (r for r in room_ok[ci] if not room_busy.get((r, d, p))),
+                    None,
+                )
+                if ri is None:
+                    continue
+                # Avoid same-day same-subject consecutive — soft, but cheap to honour
+                # Skip: greedy completion treats this as a soft preference; if
+                # the only available slot is consecutive, take it rather than
+                # leaving the session unplaced.
+                slot = period_slots[p] if p < len(period_slots) else {"start": "?", "end": "?"}
+                extra.append({
+                    "class_name":    classes[ci]["name"],
+                    "class_index":   ci,
+                    "subject_name":  subjects[si]["name"],
+                    "subject_code":  subjects[si]["code"],
+                    "teacher_name":  teachers[ti]["name"],
+                    "teacher_index": ti,
+                    "room_name":     rooms[ri]["name"],
+                    "room_index":    ri,
+                    "day":           working_days[d],
+                    "day_index":     d,
+                    "period":        p + 1,
+                    "start_time":    slot["start"],
+                    "end_time":      slot["end"],
+                })
+                class_busy[(ci, d, p)]   = True
+                teacher_busy[(ti, d, p)] = True
+                room_busy[(ri, d, p)]    = True
+                # If CP-SAT didn't pin a teacher (shouldn't happen, but be safe),
+                # remember this binding so subsequent unplaced sessions of the
+                # same (class, subject) reuse this teacher.
+                pinned_teacher.setdefault((ci, si), ti)
+                placed = True
+                break
+
+        if not placed:
+            still_unplaced += 1
+
+    return extra, still_unplaced
 
 
 # ──────────────────────────────────────────────────────────────

@@ -54,3 +54,6 @@ class SchoolGenerateRequest(BaseModel):
     start_time: str = "08:00"
     constraints: SchoolHardConstraintsIn = Field(default_factory=SchoolHardConstraintsIn)
     soft_constraints: List[SchoolSoftConstraintIn] = []
+    # Optional override for the solver's auto-tiered time budget. Auto-Fix
+    # retries pass a larger value so time stops being the limiting factor.
+    solve_time_limit_seconds: Optional[float] = None

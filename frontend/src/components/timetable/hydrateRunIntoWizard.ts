@@ -28,11 +28,29 @@ export async function hydrateRunIntoWizard(
     : await schoolAPI.getRun(runId);
   const run = res.data;
 
+  // The DB stores only `run.name` (e.g. "Acme School timetable"), not the
+  // original institution name. load_run returns institution_name = run.name
+  // for compatibility, but the wizard treats institution_name as a bare
+  // school name — appending " timetable" on every save. Strip the suffix
+  // here so Duplicate / Regenerate hydrate with the clean institution name.
+  const stripTimetableSuffix = (s: string): string =>
+    s.replace(/(?:\s+timetable)+$/i, '').trim();
+
+  if (run.institution_name) {
+    run.institution_name = stripTimetableSuffix(run.institution_name);
+  }
+
   const store = useOnboardingStore.getState();
 
   // Generic fields (school wizard steps). For college runs these are
   // populated with empty defaults so school steps don't show stale data.
-  store.setInstitutionData(run.institution_name ? { name: run.institution_name } : null);
+  // Include `type` and `workflow` so Step1Institution's workflow-mismatch
+  // check doesn't false-positive and reset the loaded name to defaults.
+  store.setInstitutionData(run.institution_name ? {
+    name: run.institution_name,
+    type: runKind === 'school' ? 'School' : 'College',
+    workflow: runKind,
+  } : null);
   store.setClassesData(   runKind === 'school' ? (run.classes  || []) : []);
   store.setSubjectsData(  runKind === 'school' ? (run.subjects || []) : []);
   store.setTeachersData(  runKind === 'school' ? (run.teachers || []) : []);

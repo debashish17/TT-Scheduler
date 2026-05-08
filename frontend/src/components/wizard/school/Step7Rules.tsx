@@ -32,10 +32,70 @@ const CONSTRAINTS = [
   { id: 8, name: 'LabConsecutive', rule: 'Lab sessions are always scheduled back-to-back' },
 ];
 
+// ─── Bottleneck diagnosis ──────────────────────────────────────
+// Compute whether the problem is room-bound or teacher-bound. Used by
+// computeAllFixes to scale room additions aggressively when the structural
+// bottleneck is room-side (e.g. 13 classes vs 5 rooms with room-pinning).
+function diagnoseBottleneck(state: AiFixState, classes: any[]): {
+  bottleneck: 'rooms' | 'teachers' | 'balanced';
+  detail: string;
+} {
+  const subjects = state.subjects || [];
+  const rooms    = state.rooms    || [];
+  const teachers = state.teachers || [];
+  const td       = state.timeData || {};
+
+  const days = Array.isArray(td.workingDays) ? td.workingDays.length : 5;
+  const ppd  = Math.max(1, parseInt(td.periodsPerDay) || 7);
+  const totalSlotsPerRoom = days * ppd;
+
+  // (class, subject) pairs needing dedicated rooms (room-pinning constraint).
+  // Each subject may target specific classes via target_classes; assume "all"
+  // when unspecified.
+  let csPairs = 0;
+  let totalSessions = 0;
+  for (const s of subjects) {
+    const ppw = Math.max(1, parseInt(s.periods_per_week) || 3);
+    const targeted = Array.isArray(s.target_classes) && s.target_classes.length > 0
+      ? s.target_classes.length
+      : classes.length;
+    csPairs       += targeted;
+    totalSessions += targeted * ppw;
+  }
+
+  // Room utilization if every (class, subject) pair gets a dedicated room
+  // pinned across the week. If pairs > rooms, some rooms host multiple
+  // pairs — and if total session demand > total room slots, infeasible.
+  const totalRoomSlots = rooms.length * totalSlotsPerRoom;
+  const roomUtil = totalRoomSlots > 0 ? totalSessions / totalRoomSlots : Infinity;
+
+  // Teacher utilization: each teacher caps at ppd * days periods/week.
+  const totalTeacherSlots = teachers.length * totalSlotsPerRoom;
+  const teacherUtil = totalTeacherSlots > 0 ? totalSessions / totalTeacherSlots : Infinity;
+
+  if (roomUtil > 0.85 && roomUtil > teacherUtil * 1.3) {
+    return {
+      bottleneck: 'rooms',
+      detail: `room utilization ${(roomUtil * 100).toFixed(0)}% (${csPairs} class-subject pairs vs ${rooms.length} rooms)`,
+    };
+  }
+  if (teacherUtil > 0.85 && teacherUtil > roomUtil * 1.3) {
+    return {
+      bottleneck: 'teachers',
+      detail: `teacher utilization ${(teacherUtil * 100).toFixed(0)}%`,
+    };
+  }
+  return {
+    bottleneck: 'balanced',
+    detail: `room ${(roomUtil * 100).toFixed(0)}%, teacher ${(teacherUtil * 100).toFixed(0)}%`,
+  };
+}
+
 // ─── AI: apply ALL fixes at once ─────────────────────────────────
 function computeAllFixes(
   warnings: SolverWarning[],
   initial: AiFixState,
+  classes: any[] = [],
 ): { teachers: any[]; rooms: any[]; subjects: any[]; timeData: any; log: string[] } {
   let teachers = [...(initial.teachers || [])];
   let rooms = [...(initial.rooms || [])];
@@ -43,6 +103,20 @@ function computeAllFixes(
   let td = { ...(initial.timeData || {}) };
   const log: string[] = [];
   const seen = new Set<string>();
+
+  // Diagnose the structural bottleneck once, then use it to bias additions.
+  const diag = diagnoseBottleneck(initial, classes);
+  log.push(`Diagnosed bottleneck: ${diag.bottleneck} (${diag.detail})`);
+
+  // Helper: produce a unique room name. Iterating Auto-Fix means a previous
+  // round may already have added rooms named "Room N", so naive index-based
+  // naming collides on the DB unique constraint (run_id, name). This walks
+  // upward from `rooms.length + 1` until it finds an unused name.
+  const uniqueRoomName = (prefix = 'Room'): string => {
+    let n = rooms.length + 1;
+    while (rooms.some((r: any) => r.name === `${prefix} ${n}`)) n++;
+    return `${prefix} ${n}`;
+  };
 
   for (const w of warnings) {
     const d = w.detail || {};
@@ -92,13 +166,15 @@ function computeAllFixes(
         // Use the realistic per-teacher capacity if backend provided it
         // (factors in max_per_day_teacher and same-teacher-per-class rule).
         const classesPerTeacher = Math.max(1, d.classes_per_teacher || 1);
-        const ppw = Math.max(1, d.ppw || 3);
         const nClasses = Math.max(1, d.n_classes || 1);
-        // Total teachers needed = ceil(n_classes / classes_per_teacher).
-        // Add +1 buffer so CP-SAT has slack for the same-teacher-per-class
-        // and no-consecutive-same-subject constraints (avoids unfit sessions).
-        // Subtract existing qualified teachers.
-        const totalTeachersNeeded = Math.ceil(nClasses / classesPerTeacher) + 1;
+        // Total teachers needed = ceil(n_classes / classes_per_teacher) * 1.5.
+        // The 1.5x multiplier (was +1 before) gives CP-SAT real slack for
+        // the consecutive-period and same-day-spread soft constraints, plus
+        // the room-pinning constraint that bunches a class's sessions.
+        // Without it, pre-check passes but CP-SAT/greedy still hit dead ends
+        // because the realistic-capacity heuristic doesn't model these.
+        const minTeachers   = Math.ceil(nClasses / classesPerTeacher);
+        const totalTeachersNeeded = Math.max(2, Math.ceil(minTeachers * 1.5));
         const needed = Math.max(1, totalTeachersNeeded - qualifiedCount);
 
         let count = 1;
@@ -116,7 +192,7 @@ function computeAllFixes(
       const k = `room_${cn}`;
       if (!seen.has(k)) {
         seen.add(k);
-        rooms.push({ name: `Large Room ${rooms.length + 1}`, capacity: size });
+        rooms.push({ name: uniqueRoomName('Large Room'), capacity: size });
         log.push(`✔ Added large room (cap ${size}) for "${cn}"`);
       }
     }
@@ -126,7 +202,7 @@ function computeAllFixes(
       if (needed > 0 && !seen.has('fill_rooms')) {
         seen.add('fill_rooms');
         for (let i = 0; i < needed; i++) {
-          rooms.push({ name: `Room ${rooms.length + 1}`, capacity: 40 });
+          rooms.push({ name: uniqueRoomName(), capacity: 40 });
         }
         log.push(`✔ Added ${needed} room(s) to match class count`);
       }
@@ -139,11 +215,13 @@ function computeAllFixes(
         // Per-subject unplaced session (from greedy solver)
         if (fix.includes('teacher') && !seen.has(`up_t_${sc}`)) {
           seen.add(`up_t_${sc}`);
-          teachers.push({ name: `Extra Teacher (${sc})`, subjects: [sc] });
+          let n = 1;
+          while (teachers.some((t: any) => t.name === `Extra ${sc} Teacher ${n}`)) n++;
+          teachers.push({ name: `Extra ${sc} Teacher ${n}`, subjects: [sc] });
           log.push(`✔ Added teacher for unplaced "${sc}" session`);
         } else if (fix.includes('room') && !seen.has('up_room')) {
           seen.add('up_room');
-          rooms.push({ name: `Room ${rooms.length + 1}`, capacity: 40 });
+          rooms.push({ name: uniqueRoomName(), capacity: 40 });
           log.push('✔ Added room for unplaced session');
         } else if (!seen.has(`up_ppw_${sc}`) && !seen.has('reduce_ppw')) {
           seen.add(`up_ppw_${sc}`);
@@ -155,19 +233,54 @@ function computeAllFixes(
           log.push(`✔ Reduced periods/week for "${sc}"`);
         }
       } else {
-        // Bulk unplaced sessions from CP-SAT — add an extra room + reduce all periods
+        // Bulk unplaced sessions from CP-SAT (cause=constraints, post-greedy).
+        // Bottleneck-aware scaling: room-bound problems get many rooms, few
+        // teachers; teacher-bound problems get the opposite. Balanced gets
+        // moderate amounts of both.
+        const unplacedCount = (d.unplaced_count as number) || 1;
+        const isRoomBound    = diag.bottleneck === 'rooms';
+        const isTeacherBound = diag.bottleneck === 'teachers';
+
+        if (!seen.has('up_bulk_teachers')) {
+          seen.add('up_bulk_teachers');
+          // Teacher additions: scaled by bottleneck. Room-bound → few teachers
+          // (we don't need them; rooms are the limit). Teacher-bound → many.
+          const perSubject = isRoomBound ? 0 : (isTeacherBound ? 2 : 1);
+          if (perSubject > 0) {
+            for (const subj of subjects) {
+              const sc = subj.code;
+              for (let n = 0; n < perSubject; n++) {
+                let count = 1;
+                while (teachers.some((t: any) => t.name === `${sc} Aux ${count}`)) count++;
+                teachers.push({ name: `${sc} Aux ${count}`, subjects: [sc] });
+              }
+            }
+            log.push(
+              `✔ Added ${perSubject} auxiliary teacher(s) per subject ` +
+              `(${perSubject * subjects.length} total) — bottleneck=${diag.bottleneck}`
+            );
+          } else {
+            log.push(`✔ Skipped teacher additions — bottleneck is ${diag.bottleneck}, not teachers`);
+          }
+        }
+
         if (!seen.has('up_bulk_room')) {
           seen.add('up_bulk_room');
-          rooms.push({ name: `Room ${rooms.length + 1}`, capacity: 40 });
-          log.push('✔ Added extra room to help place unscheduled sessions');
-        }
-        if (!seen.has('reduce_ppw') && !seen.has('up_bulk_ppw')) {
-          seen.add('up_bulk_ppw');
-          subjects = subjects.map((s: any) => ({
-            ...s,
-            periods_per_week: Math.max(1, (parseInt(s.periods_per_week) || 3) - 1),
-          }));
-          log.push('✔ Reduced periods/week by 1 for all subjects to ease scheduling');
+          // Room additions: scaled by bottleneck. Room-bound → many; balanced
+          // → moderate; teacher-bound → minimal.
+          let roomsToAdd: number;
+          if (isRoomBound) {
+            // Aggressive: 1 room per 20 unplaced (cap at doubling room count)
+            roomsToAdd = Math.min(rooms.length, Math.max(3, Math.ceil(unplacedCount / 20)));
+          } else if (isTeacherBound) {
+            roomsToAdd = 1;
+          } else {
+            roomsToAdd = Math.max(1, Math.ceil(unplacedCount / 50));
+          }
+          for (let i = 0; i < roomsToAdd; i++) {
+            rooms.push({ name: uniqueRoomName(), capacity: 40 });
+          }
+          log.push(`✔ Added ${roomsToAdd} room(s) — bottleneck=${diag.bottleneck}`);
         }
       }
     }
@@ -188,16 +301,41 @@ const SOLVER_STEPS = [
   'Done',
 ];
 
-const SolvingOverlay: React.FC<{ progress: number }> = ({ progress }) => {
+const SolvingOverlay: React.FC<{
+  progress: number;
+  iteration?: number;
+  maxIterations?: number;
+  placed?: number | null;
+  total?: number | null;
+  message?: string;
+}> = ({ progress, iteration = 0, maxIterations = 3, placed, total, message }) => {
   const currentIdx = Math.min(Math.floor(progress * SOLVER_STEPS.length), SOLVER_STEPS.length - 1);
 
   return (
     <div className="fixed inset-0 z-50 paper-grain flex items-center justify-center" style={{ background: 'var(--paper)' }}>
       <div className="max-w-lg w-full px-8">
-        <Eyebrow>Solving · run-{Date.now().toString().slice(-4)}</Eyebrow>
-        <h2 className="serif leading-tight tracking-tight mt-4 mb-8" style={{ fontSize: 48 }}>
+        <Eyebrow>
+          {iteration > 0
+            ? `Auto-Fix iteration ${iteration} of ${maxIterations}`
+            : `Solving · run-${Date.now().toString().slice(-4)}`}
+        </Eyebrow>
+        <h2 className="serif leading-tight tracking-tight mt-4 mb-4" style={{ fontSize: 48 }}>
           Searching for<br />a <span className="italic" style={{ color: 'var(--brand)' }}>clash-free</span> schedule.
         </h2>
+        {(message || (placed != null && total != null)) && (
+          <div
+            className="mb-6 px-4 py-3 rounded-md text-[12px]"
+            style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+          >
+            {placed != null && total != null && (
+              <div className="mono mb-1">
+                Placed {placed}/{total} sessions
+                {total > 0 && ` (${Math.round((placed / total) * 100)}%)`}
+              </div>
+            )}
+            {message && <div>{message}</div>}
+          </div>
+        )}
         <div className="edge rounded-xl overflow-hidden" style={{ background: 'var(--paper-2)' }}>
           {SOLVER_STEPS.map((step, i) => {
             const done = i < currentIdx;
@@ -325,6 +463,18 @@ const Step7Rules: React.FC = () => {
   const [newRoomNames, setNewRoomNames] = useState<{ original: string; current: string }[]>([]);
   // Ref so runGenerate's closure can read the latest value without stale-capture
   const pendingRenameRef = useRef<{ teachers: { original: string; current: string }[]; rooms: { original: string; current: string }[] } | null>(null);
+  // Iterative Auto-Fix state. Tracks both iteration count (for the hard cap)
+  // and the best placement count seen so far (for plateau detection — if
+  // adding resources doesn't increase placements, the bottleneck isn't
+  // capacity and we should stop).
+  const autoFixIterationsRef = useRef<number>(0);
+  const bestPlacedRef        = useRef<number>(0);
+  const MAX_AUTOFIX_ITERATIONS = 3;
+  // UI state for showing iteration progress in the SolvingOverlay
+  const [autoFixIteration, setAutoFixIteration] = useState<number>(0);
+  const [autoFixPlaced, setAutoFixPlaced]       = useState<number | null>(null);
+  const [autoFixTotal, setAutoFixTotal]         = useState<number | null>(null);
+  const [autoFixMessage, setAutoFixMessage]     = useState<string>('');
 
   const saveConstraints = (patch: { active?: number[]; max_consecutive_periods?: number; max_periods_per_day_per_teacher?: number }) => {
     setConstraintsData({
@@ -414,15 +564,29 @@ const Step7Rules: React.FC = () => {
   };
 
   // Generate timetable
-  const runGenerate = async (overrides: { teachers?: any[]; rooms?: any[]; subjects?: any[] } = {}) => {
+  const runGenerate = async (
+    overrides: { teachers?: any[]; rooms?: any[]; subjects?: any[]; solveTimeLimitSeconds?: number } = {},
+  ) => {
     setIsGenerating(true);
     setError(null);
     setSolverWarnings([]);
     setSolveProgress(0);
-    setAiSolveLog([]);
+    // Don't clear aiSolveLog on iterative retries — it accumulates the
+    // "── Auto-retry #N ──" entries that show what each iteration did.
+    // Only clear on user-initiated Generate (overrides empty = no retry).
+    const isInitial = Object.keys(overrides).length === 0;
+    if (isInitial) {
+      setAiSolveLog([]);
+    }
 
     try {
-      const request = buildRequest(overrides);
+      const request: any = buildRequest(overrides);
+      // Auto-Fix retries pass a long budget so time stops being the limiting
+      // factor — the user has already authorised resource changes; we should
+      // give the solver every chance to find a clean solution.
+      if (overrides.solveTimeLimitSeconds) {
+        request.solve_time_limit_seconds = overrides.solveTimeLimitSeconds;
+      }
 
       // Log the request being sent
       console.log('📤 Sending to backend:', JSON.stringify(request, null, 2));
@@ -472,20 +636,125 @@ const Step7Rules: React.FC = () => {
 
       if (warnings.length > 0) {
         const isRetry = Object.keys(overrides).length > 0;
+        // Detect warnings that *can* be auto-fixed by adding resources.
+        // UNPLACED_SESSION with cause="constraints" means CP-SAT + greedy
+        // both gave up — adding teachers/rooms is the right response.
+        const hasFixableWarnings = warnings.some((w) =>
+          ['TEACHER_CAPACITY_EXCEEDED', 'NO_ROOM_FOR_CLASS', 'FEWER_ROOMS_THAN_CLASSES',
+           'NO_TEACHER_FOR_SUBJECT', 'SCHEDULE_OVERSUBSCRIBED', 'UNPLACED_SESSION'].includes(w.code)
+        );
+
+        // Track placement progress for plateau detection
+        const currentPlaced = timetableData.assignments?.length ?? 0;
+        const stats = timetableData.stats || {};
+        const totalNeeded = currentPlaced + (stats.unplaced_sessions || 0);
+
         if (!isRetry) {
-          // First run only — offer autofix modal
+          // First run only — offer autofix modal (user-initiated)
+          autoFixIterationsRef.current = 0;
+          bestPlacedRef.current = currentPlaced;
           const result = computeAllFixes(warnings, {
             teachers: teachersData || [],
             rooms: roomsData || [],
             subjects: subjectsData || [],
             timeData: timeData || {},
-          });
+          }, classesData || []);
           if (result.log.length > 0) {
             setAiSolveLog(result.log);
             setShowResolveModal(true);
           }
+        } else if (
+          hasFixableWarnings &&
+          autoFixIterationsRef.current < MAX_AUTOFIX_ITERATIONS &&
+          // Plateau check: from iteration 2+, require *meaningful* placement
+          // improvement (≥5% of total) — not just one or two extra sessions.
+          // Adding 9 teachers + 3 rooms should produce a noticeable jump if
+          // it's actually addressing the bottleneck. Marginal gains mean
+          // we're polishing a stuck-shaped problem, not unstucking it.
+          (
+            autoFixIterationsRef.current < 2 ||
+            (currentPlaced - bestPlacedRef.current) >= Math.max(5, Math.ceil(totalNeeded * 0.05))
+          )
+        ) {
+          // Iterative Auto-Fix: previous retry still left fixable warnings AND
+          // made measurable progress. Apply another round of fixes silently.
+          autoFixIterationsRef.current += 1;
+          bestPlacedRef.current = Math.max(bestPlacedRef.current, currentPlaced);
+
+          // Update progress UI so user sees what's happening
+          setAutoFixIteration(autoFixIterationsRef.current);
+          setAutoFixPlaced(currentPlaced);
+          setAutoFixTotal(totalNeeded);
+          setAutoFixMessage(
+            `Iteration ${autoFixIterationsRef.current}/${MAX_AUTOFIX_ITERATIONS}: ` +
+            `placed ${currentPlaced}/${totalNeeded}, adding more resources…`,
+          );
+
+          const currentTeachers = overrides.teachers ?? teachersData ?? [];
+          const currentRooms    = overrides.rooms    ?? roomsData    ?? [];
+          const currentSubjects = overrides.subjects ?? subjectsData ?? [];
+          const result = computeAllFixes(warnings, {
+            teachers: currentTeachers,
+            rooms:    currentRooms,
+            subjects: currentSubjects,
+            timeData: timeData || {},
+          }, classesData || []);
+          if (result.log.length > 0) {
+            setAiSolveLog((prev) => [
+              ...prev,
+              `── Auto-retry #${autoFixIterationsRef.current} (placed ${currentPlaced}/${totalNeeded}) ──`,
+              ...result.log,
+            ]);
+            // Persist the augmented inputs so the wizard reflects them
+            setTeachersData(result.teachers);
+            setRoomsData(result.rooms);
+            setSubjectsData(result.subjects);
+            // Recurse with the new resources — no modal in between.
+            // Use the auto-tiered budget (no override): retries with more
+            // resources need at least as much time as iteration 1, otherwise
+            // we falsely trigger the plateau check by under-placing on a
+            // shorter budget.
+            //
+            // Keep `isGenerating` true throughout — the overlay must stay
+            // visible across iterations so the user sees one continuous
+            // "solving" state instead of flicker. Reset only progress.
+            setSolveProgress(0);
+            await runGenerate({
+              teachers: result.teachers,
+              rooms:    result.rooms,
+              subjects: result.subjects,
+            });
+            return;
+          }
+          // No fixes computed — fall through to navigate
+          await new Promise((r) => setTimeout(r, 500));
+          if (hasAssignments) {
+            setIsGenerating(false);
+            navigate('/timetable');
+            return;
+          }
+        } else if (
+          isRetry &&
+          autoFixIterationsRef.current >= 2 &&
+          (currentPlaced - bestPlacedRef.current) < Math.max(5, Math.ceil(totalNeeded * 0.05))
+        ) {
+          // Plateau detected at iteration 2+ (where comparison is meaningful):
+          // resource additions produced negligible (<5%) placement improvement.
+          // The bottleneck is structural, not capacity. Stop and surface what
+          // we have to the user.
+          setAutoFixMessage(
+            `Auto-Fix stopped: adding resources didn't improve placement ` +
+            `(stuck at ${currentPlaced}/${totalNeeded}). The bottleneck is structural, not capacity.`,
+          );
+          await new Promise((r) => setTimeout(r, 700));
+          if (hasAssignments) {
+            setIsGenerating(false);
+            navigate('/timetable');
+            return;
+          }
         } else {
-          // After autofix retry — navigate with whatever was generated
+          // After autofix retry (no more fixes possible or hit iteration cap)
+          // — navigate with whatever was generated
           await new Promise((r) => setTimeout(r, 700));
           if (
             hasAssignments &&
@@ -561,7 +830,7 @@ const Step7Rules: React.FC = () => {
         rooms: roomsData || [],
         subjects: subjectsData || [],
         timeData: timeData || {},
-      });
+      }, classesData || []);
 
       setAiSolveLog(result.log);
       await new Promise((r) => setTimeout(r, 900));
@@ -599,6 +868,13 @@ const Step7Rules: React.FC = () => {
   };
 
   const handleGenerate = async () => {
+    // Fresh user-initiated Generate — reset all iterative Auto-Fix state.
+    autoFixIterationsRef.current = 0;
+    bestPlacedRef.current = 0;
+    setAutoFixIteration(0);
+    setAutoFixPlaced(null);
+    setAutoFixTotal(null);
+    setAutoFixMessage('');
     console.log('Validating classes:', classesData);
     const validClasses = (classesData || []).filter((c: any) => c?.name?.trim());
     console.log('Valid classes:', validClasses);
@@ -757,7 +1033,16 @@ const Step7Rules: React.FC = () => {
         </div>
       </WizardShell>
 
-      {isGenerating && <SolvingOverlay progress={solveProgress} />}
+      {isGenerating && (
+        <SolvingOverlay
+          progress={solveProgress}
+          iteration={autoFixIteration}
+          maxIterations={MAX_AUTOFIX_ITERATIONS}
+          placed={autoFixPlaced}
+          total={autoFixTotal}
+          message={autoFixMessage}
+        />
+      )}
 
       {/* Auto Resolve Modal */}
       {showResolveModal && (

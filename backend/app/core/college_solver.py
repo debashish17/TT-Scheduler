@@ -747,7 +747,7 @@ def _cp_solve(
         for var, w in user_penalties:
             penalty_terms.append(var * w)
 
-    reward = sum(is_scheduled[s] * 10000 for s in range(S))
+    reward = sum(is_scheduled[s] * 100_000 for s in range(S))
     if penalty_terms:
         model.Maximize(reward - sum(penalty_terms))
     else:

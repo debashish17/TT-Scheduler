@@ -24,6 +24,14 @@ class AnalyticsRequest(BaseModel):
     solver: str = "CP-SAT"
     status: str = "FEASIBLE"
     solve_time: float = 0.0
+    # Optional: counts of inputs the user actually configured. When provided,
+    # the summary reports availability (configured) and utilization (used)
+    # separately — without these, classes/teachers/subjects/rooms would be
+    # counted only from assignments, hiding rooms the solver didn't pick.
+    rooms:    List[Dict[str, Any]] = []
+    classes:  List[Dict[str, Any]] = []
+    teachers: List[Dict[str, Any]] = []
+    subjects: List[Dict[str, Any]] = []
 
 
 def compute_analytics(body: AnalyticsRequest) -> dict:
@@ -46,12 +54,25 @@ def compute_analytics(body: AnalyticsRequest) -> dict:
     unique_subjects = list({a["subject_code"] for a in assignments})
     unique_rooms = list({a["room_name"] for a in assignments})
 
+    # Configured counts come from the wizard inputs when provided. Fall back
+    # to "used" when the caller didn't pass inputs (legacy callers + tests).
+    configured_classes  = len(body.classes)  if body.classes  else len(unique_classes)
+    configured_teachers = len(body.teachers) if body.teachers else len(unique_teachers)
+    configured_subjects = len(body.subjects) if body.subjects else len(unique_subjects)
+    configured_rooms    = len(body.rooms)    if body.rooms    else len(unique_rooms)
+
     summary = {
         "total_assignments": len(assignments),
-        "classes_count": len(unique_classes),
-        "teachers_count": len(unique_teachers),
-        "subjects_count": len(unique_subjects),
-        "rooms_count": len(unique_rooms),
+        # Backward-compatible: existing UI reads *_count as "configured" total
+        "classes_count":  configured_classes,
+        "teachers_count": configured_teachers,
+        "subjects_count": configured_subjects,
+        "rooms_count":    configured_rooms,
+        # Utilization: how many of the configured were actually scheduled
+        "classes_used":  len(unique_classes),
+        "teachers_used": len(unique_teachers),
+        "subjects_used": len(unique_subjects),
+        "rooms_used":    len(unique_rooms),
         "working_days_count": len(working_days),
         "periods_per_day": len(time_slots),
         "solver": body.solver,
