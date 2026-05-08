@@ -29,16 +29,16 @@
 
 ## Features
 
-| | Feature | Description |
-|---|---|---|
-| 🧠 | **CP-SAT Solver** | Google OR-Tools constraint engine with 8 hard constraints — zero clashes, guaranteed |
-| 🧭 | **7-Step Onboarding Wizard** | Guided setup: institution → departments → rooms → faculty → subjects → constraints → generate |
-| 👤 | **Per-User Persistence** | Full state snapshots saved to Supabase — resume exactly where you left off, across devices |
-| 📜 | **Timetable History** | Browse, compare, and restore any of your previously generated timetables |
-| 📊 | **Multiple Views** | Grid, Faculty, Room, and Batch views for every generated schedule |
-| 📥 | **Excel Import / Export** | Bulk-import faculty & courses from spreadsheets; export timetables to `.xlsx` |
-| 🔐 | **Auth via Supabase** | Secure JWT-based authentication with row-level security on all user data |
-| 🌙 | **Dark-first UI** | Glass-morphism design built with React + Vite |
+| Feature | Description |
+|---|---|
+| **CP-SAT Solver** | Google OR-Tools constraint engine with 8 hard constraints — zero clashes, guaranteed |
+| **7-Step Onboarding Wizard** | Guided setup: institution → departments → rooms → faculty → subjects → constraints → generate |
+| **Per-User Persistence** | Full state snapshots saved to Supabase — resume exactly where you left off, across devices |
+| **Timetable History** | Browse, compare, and restore any of your previously generated timetables |
+| **Multiple Views** | Grid, Faculty, Room, and Batch views for every generated schedule |
+| **Excel Import / Export** | Bulk-import faculty & courses from spreadsheets; export timetables to `.xlsx` |
+| **Auth via Supabase** | Secure JWT-based authentication with row-level security on all user data |
+| **Dark-first UI** | Glass-morphism design built with React + Vite |
 
 ---
 
