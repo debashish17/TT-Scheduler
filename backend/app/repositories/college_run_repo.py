@@ -1,7 +1,20 @@
 """Persistence for college runs — save inputs + assignments inside one transaction."""
+import re
 from datetime import time
 from typing import Optional
 from uuid import UUID, uuid4
+
+
+_TIMETABLE_SUFFIX_RE = re.compile(r"(?:\s+timetable)+$", re.IGNORECASE)
+
+
+def _build_run_name(institution_name: str) -> str:
+    """Build a run name like 'Acme College timetable', stripping any trailing
+    ' timetable' suffix(es) first to prevent iterative Duplicate / Regenerate
+    from piling up the suffix.
+    """
+    cleaned = _TIMETABLE_SUFFIX_RE.sub("", institution_name or "").strip() or "Untitled"
+    return f"{cleaned} timetable"
 
 from sqlalchemy.orm import Session
 
@@ -55,7 +68,7 @@ def save_run(
     db.add(Run(
         id=run_id, user_id=user_id, kind=RunKind.COLLEGE,
         parent_run_id=parent_run_id,
-        name=request.name or f"{request.institution_name} timetable",
+        name=request.name or _build_run_name(request.institution_name),
         status=_solver_status_to_enum(result.get("status", "FAILED")),
         solver=result.get("solver", "CP-SAT"),
         solve_time_seconds=_extract_solve_time(result),

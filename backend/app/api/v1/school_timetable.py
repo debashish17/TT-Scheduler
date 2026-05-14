@@ -33,6 +33,10 @@ def _request_to_solver_problem(request: SchoolGenerateRequest) -> dict:
         "start_time": request.start_time,
         "constraints": request.constraints.model_dump(),
         "soft_constraints": [sc.model_dump() for sc in request.soft_constraints],
+        **(
+            {"solve_time_limit_seconds": request.solve_time_limit_seconds}
+            if request.solve_time_limit_seconds is not None else {}
+        ),
     }
 
 

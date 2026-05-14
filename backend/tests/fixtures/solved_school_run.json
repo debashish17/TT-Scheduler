@@ -1,0 +1,230 @@
+{
+  "institution_name": "Delhi Public School, RK Puram timetable",
+  "name": "Delhi Public School, RK Puram timetable",
+  "parent_run_id": null,
+  "subjects": [
+    {
+      "name": "English",
+      "code": "ENG",
+      "periods_per_week": 6,
+      "target_classes": []
+    },
+    {
+      "name": "Mathematics",
+      "code": "MAT",
+      "periods_per_week": 6,
+      "target_classes": []
+    },
+    {
+      "name": "Science",
+      "code": "SCI",
+      "periods_per_week": 5,
+      "target_classes": []
+    },
+    {
+      "name": "Social Studies",
+      "code": "SST",
+      "periods_per_week": 4,
+      "target_classes": []
+    },
+    {
+      "name": "Computer Sc.",
+      "code": "CS",
+      "periods_per_week": 3,
+      "target_classes": []
+    },
+    {
+      "name": "Phys. Ed.",
+      "code": "PHY",
+      "periods_per_week": 2,
+      "target_classes": []
+    }
+  ],
+  "teachers": [
+    {
+      "name": "Mrs. Sharma",
+      "subjects": [
+        "ENG"
+      ]
+    },
+    {
+      "name": "Mr. Verma",
+      "subjects": [
+        "MAT"
+      ]
+    },
+    {
+      "name": "Mrs. Iyer",
+      "subjects": [
+        "SCI"
+      ]
+    },
+    {
+      "name": "Mr. Das",
+      "subjects": [
+        "SST"
+      ]
+    },
+    {
+      "name": "Ms. Nair",
+      "subjects": [
+        "CS"
+      ]
+    },
+    {
+      "name": "Mr. Singh",
+      "subjects": [
+        "PHY"
+      ]
+    },
+    {
+      "name": "ENG Teacher 1",
+      "subjects": [
+        "ENG"
+      ]
+    },
+    {
+      "name": "ENG Teacher 2",
+      "subjects": [
+        "ENG"
+      ]
+    },
+    {
+      "name": "MAT Teacher 1",
+      "subjects": [
+        "MAT"
+      ]
+    },
+    {
+      "name": "MAT Teacher 2",
+      "subjects": [
+        "MAT"
+      ]
+    },
+    {
+      "name": "SCI Teacher 1",
+      "subjects": [
+        "SCI"
+      ]
+    },
+    {
+      "name": "SCI Teacher 2",
+      "subjects": [
+        "SCI"
+      ]
+    },
+    {
+      "name": "SST Teacher 1",
+      "subjects": [
+        "SST"
+      ]
+    },
+    {
+      "name": "SST Teacher 2",
+      "subjects": [
+        "SST"
+      ]
+    }
+  ],
+  "classes": [
+    {
+      "name": "Class 10",
+      "size": 40
+    },
+    {
+      "name": "Class 7A",
+      "size": 40
+    },
+    {
+      "name": "Class 8B",
+      "size": 40
+    },
+    {
+      "name": "Class 9C",
+      "size": 40
+    },
+    {
+      "name": "Class 7C",
+      "size": 40
+    },
+    {
+      "name": "Class 7B",
+      "size": 40
+    },
+    {
+      "name": "Class 9A",
+      "size": 40
+    },
+    {
+      "name": "Class 8C",
+      "size": 40
+    },
+    {
+      "name": "Class 8A",
+      "size": 40
+    },
+    {
+      "name": "Class 9B",
+      "size": 40
+    }
+  ],
+  "rooms": [
+    {
+      "name": "Room 101",
+      "capacity": 42
+    },
+    {
+      "name": "Room 102",
+      "capacity": 40
+    },
+    {
+      "name": "Room 103",
+      "capacity": 44
+    },
+    {
+      "name": "Room 104",
+      "capacity": 38
+    },
+    {
+      "name": "Computer Lab",
+      "capacity": 30
+    },
+    {
+      "name": "Room 6",
+      "capacity": 40
+    },
+    {
+      "name": "Room 7",
+      "capacity": 40
+    },
+    {
+      "name": "Room 8",
+      "capacity": 40
+    },
+    {
+      "name": "Room 9",
+      "capacity": 40
+    },
+    {
+      "name": "Room 10",
+      "capacity": 40
+    }
+  ],
+  "working_days": [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday"
+  ],
+  "periods_per_day": 8,
+  "period_duration_minutes": 45,
+  "lunch_duration_minutes": 30,
+  "start_time": "08:30",
+  "constraints": {
+    "max_consecutive_periods": 3,
+    "lunch_after_period": 4,
+    "max_periods_per_day_per_teacher": 6
+  },
+  "soft_constraints": []
+}

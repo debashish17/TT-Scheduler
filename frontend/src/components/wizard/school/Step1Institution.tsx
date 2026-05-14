@@ -47,8 +47,11 @@ const Step1Institution: React.FC = () => {
       return defaults;
     }
 
-    // Check if existing data matches current workflow
-    const dataIsSchool = institutionData.type === 'School';
+    // Check if existing data matches current workflow. Prefer the explicit
+    // `workflow` field; fall back to `type` for legacy data that predates it.
+    const dataIsSchool = institutionData.workflow
+      ? institutionData.workflow === 'school'
+      : institutionData.type === 'School';
     const workflowMismatch = isSchool !== dataIsSchool;
 
     // If workflow changed, reset to appropriate defaults

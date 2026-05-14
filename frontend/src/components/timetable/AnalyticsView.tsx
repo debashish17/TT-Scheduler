@@ -76,7 +76,11 @@ function computeLocalAnalytics(timetable: any) {
 
 const AnalyticsView: React.FC = () => {
   const navigate = useNavigate();
-  const { generatedTimetable, institutionData } = useOnboardingStore();
+  const {
+    generatedTimetable, institutionData,
+    roomsData, classesData, teachersData, subjectsData,
+    collegeRooms, courseOfferings, collegeFaculty,
+  } = useOnboardingStore();
   const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
@@ -86,7 +90,17 @@ const AnalyticsView: React.FC = () => {
   useEffect(() => {
     if (!generatedTimetable) return;
     setLoading(true);
-    schoolAPI.getAnalytics(generatedTimetable)
+    // Send the wizard inputs alongside the result so analytics can report
+    // configured-vs-used counts (rooms_count = configured, rooms_used = scheduled).
+    const isCollege = (generatedTimetable as any)?.solver === 'CP-SAT-College';
+    const payload = {
+      ...generatedTimetable,
+      rooms:    isCollege ? (collegeRooms     ?? []) : (roomsData    ?? []),
+      classes:  isCollege ? []                       : (classesData  ?? []),
+      teachers: isCollege ? (collegeFaculty   ?? []) : (teachersData ?? []),
+      subjects: isCollege ? (courseOfferings  ?? []) : (subjectsData ?? []),
+    };
+    schoolAPI.getAnalytics(payload)
       .then(res => setAnalytics(res.data))
       .catch(() => setAnalytics(computeLocalAnalytics(generatedTimetable)))
       .finally(() => setLoading(false));
